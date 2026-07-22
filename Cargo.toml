@@ -12,8 +12,8 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/qntx/bcur"
 description = "A Rust implementation of Uniform Resources"
-keywords = ["crypto", "bcur"]
-categories = ["cryptography::cryptocurrencies"]
+keywords = ["ur", "bytewords", "fountain", "cbor", "qr"]
+categories = ["encoding", "cryptography", "no-std"]
 
 [workspace.dependencies]
 

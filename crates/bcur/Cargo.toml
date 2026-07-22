@@ -6,10 +6,30 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description.workspace = true
-keywords.workspace = true
-categories.workspace = true
+keywords = ["ur", "bytewords", "fountain", "cbor", "qr"]
+categories = ["encoding", "cryptography", "no-std"]
+readme = "README.md"
+documentation = "https://docs.rs/bcur"
+
+[features]
+default = ["std"]
+## Enables `std` (host builds). Transport works with or without this feature.
+std = []
+## Typed dCBOR layer (`typed` module). Implies `std` in v1.
+dcbor = ["dep:dcbor", "std"]
+## Bytemoji tables and helpers (BCR-2024-008).
+bytemoji = []
 
 [dependencies]
+bitcoin_hashes = { version = "1", default-features = false }
+crc = "3"
+rand_xoshiro = "0.8"
+thiserror = { version = "2", default-features = false }
+dcbor = { version = "0.25", optional = true, default-features = false, features = ["std"] }
+
+[dev-dependencies]
+hex = "0.4"
+minicbor = { version = "2", features = ["alloc"] }
 
 [lints]
 workspace = true

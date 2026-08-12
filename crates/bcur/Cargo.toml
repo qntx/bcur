@@ -28,21 +28,8 @@ thiserror = { version = "2", default-features = false }
 dcbor = { version = "0.25", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 hex = "0.4"
 minicbor = { version = "2", features = ["alloc"] }
-
-[[bench]]
-name = "bytewords"
-harness = false
-
-[[bench]]
-name = "fountain"
-harness = false
-
-[[bench]]
-name = "ur_roundtrip"
-harness = false
 
 [lints]
 workspace = true

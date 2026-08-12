@@ -1,12 +1,4 @@
 //! Walker's alias method sampler (ordered partition matching `ur-rs`).
-//!
-//! Indexing uses known-valid table indices produced by the algorithm; panicking
-//! on OOB would indicate a logic bug rather than hostile input.
-
-#![allow(
-    clippy::indexing_slicing,
-    reason = "alias-table construction uses closed-form indices 0..count matching ur-rs"
-)]
 
 use alloc::vec::Vec;
 
@@ -19,12 +11,6 @@ pub(crate) struct Weighted {
     probs: Vec<f64>,
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    reason = "alias method uses f64 probabilities; table sizes match ur-rs exactly"
-)]
 impl Weighted {
     /// Builds a sampler from non-negative weights that sum to a positive value.
     ///
@@ -40,38 +26,47 @@ impl Weighted {
         let summed = weights.iter().sum::<f64>();
         assert!(summed > 0.0, "probabilities don't sum to a positive value");
         let count = weights.len();
+        // Degree table size is small (≤ max fragment count); f64 scaling is normative.
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "alias weights use f64 reciprocals as specified by URKit/ur-rs"
+        )]
+        let count_f = count as f64;
         for w in &mut weights {
-            *w *= count as f64 / summed;
+            *w *= count_f / summed;
         }
         // Ordered partition: indices count-1 down to 0, small then large.
-        let (mut s, mut l): (Vec<usize>, Vec<usize>) = (1..=count)
+        let (mut small, mut large): (Vec<usize>, Vec<usize>) = (1..=count)
             .map(|j| count - j)
-            .partition(|&j| weights[j] < 1.0);
+            .partition(|&j| weights.get(j).is_some_and(|&w| w < 1.0));
 
         let mut probs: Vec<f64> = alloc::vec![0.0; count];
         let mut aliases: Vec<u32> = alloc::vec![0; count];
 
-        while !s.is_empty() && !l.is_empty() {
-            let a = s.remove(s.len() - 1);
-            let g = l.remove(l.len() - 1);
-            probs[a] = weights[a];
-            aliases[a] = g as u32;
-            weights[g] += weights[a] - 1.0;
-            if weights[g] < 1.0 {
-                s.push(g);
-            } else {
-                l.push(g);
+        while !small.is_empty() && !large.is_empty() {
+            let Some(a) = small.pop() else { break };
+            let Some(g) = large.pop() else { break };
+            reduce_alias_step(
+                a,
+                g,
+                &mut weights,
+                &mut probs,
+                &mut aliases,
+                &mut small,
+                &mut large,
+            );
+        }
+
+        while let Some(g) = large.pop() {
+            if let Some(prob) = probs.get_mut(g) {
+                *prob = 1.0;
             }
         }
 
-        while !l.is_empty() {
-            let g = l.remove(l.len() - 1);
-            probs[g] = 1.0;
-        }
-
-        while !s.is_empty() {
-            let a = s.remove(s.len() - 1);
-            probs[a] = 1.0;
+        while let Some(a) = small.pop() {
+            if let Some(prob) = probs.get_mut(a) {
+                *prob = 1.0;
+            }
         }
 
         Self { aliases, probs }
@@ -81,12 +76,58 @@ impl Weighted {
         let r1 = xoshiro.next_double();
         let r2 = xoshiro.next_double();
         let n = self.probs.len();
-        let i = (n as f64 * r1) as usize;
-        if r2 < self.probs[i] {
-            i as u32
+        // Float scaling is part of the UR degree-selection definition.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss,
+            reason = "IEEE-754 unit-interval sampling matches ur-rs/URKit bit-for-bit"
+        )]
+        let i = {
+            let n_f = n as f64;
+            let scaled = n_f * r1;
+            let raw = scaled as usize;
+            raw.min(n.saturating_sub(1))
+        };
+        let Some(&prob) = self.probs.get(i) else {
+            return 0;
+        };
+        if r2 < prob {
+            u32::try_from(i).unwrap_or(0)
         } else {
-            self.aliases[i]
+            self.aliases.get(i).copied().unwrap_or(0)
         }
+    }
+}
+
+fn reduce_alias_step(
+    a: usize,
+    g: usize,
+    weights: &mut [f64],
+    probs: &mut [f64],
+    aliases: &mut [u32],
+    small: &mut Vec<usize>,
+    large: &mut Vec<usize>,
+) {
+    let Some(weight_a) = weights.get(a).copied() else {
+        return;
+    };
+    if let Some(prob) = probs.get_mut(a) {
+        *prob = weight_a;
+    }
+    if let Ok(alias) = u32::try_from(g) {
+        if let Some(slot) = aliases.get_mut(a) {
+            *slot = alias;
+        }
+    }
+    let Some(weight_g) = weights.get_mut(g) else {
+        return;
+    };
+    *weight_g += weight_a - 1.0;
+    if *weight_g < 1.0 {
+        small.push(g);
+    } else {
+        large.push(g);
     }
 }
 
@@ -105,7 +146,7 @@ mod tests {
             3,
         ];
         for e in expected {
-            assert_eq!(sampler.next(&mut xoshiro), e);
+            assert_eq!(sampler.next(&mut xoshiro), e, "sampler next");
         }
     }
 }

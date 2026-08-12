@@ -136,9 +136,7 @@ pub fn parse(uri: &str) -> Result<ParsedUr> {
 /// Returns scheme, type, or index errors.
 pub fn parse_normalized(uri: &str) -> Result<ParsedUr> {
     let strip_scheme = uri.strip_prefix("ur:").ok_or(Error::InvalidScheme)?;
-    let (type_str, rest) = strip_scheme
-        .split_once('/')
-        .ok_or(Error::TypeUnspecified)?;
+    let (type_str, rest) = strip_scheme.split_once('/').ok_or(Error::TypeUnspecified)?;
     let ur_type = UrType::new(type_str)?;
 
     match rest.rsplit_once('/') {
@@ -160,7 +158,9 @@ pub fn parse_normalized(uri: &str) -> Result<ParsedUr> {
     }
 }
 
-fn decode_with_indices(value: &str) -> Result<(Kind, Vec<u8>, Option<(u32, u32)>)> {
+type DecodedPayload = (Kind, Vec<u8>, Option<(u32, u32)>);
+
+fn decode_with_indices(value: &str) -> Result<DecodedPayload> {
     let parsed = parse(value)?;
     let payload = bytewords::decode(&parsed.body, Style::Minimal)?;
     Ok((parsed.kind, payload, parsed.indices))
@@ -237,7 +237,7 @@ impl Encoder {
 
     /// Source fragment count `K`.
     #[must_use]
-    pub fn fragment_count(&self) -> u32 {
+    pub const fn fragment_count(&self) -> u32 {
         self.fountain.fragment_count()
     }
 }
@@ -266,7 +266,7 @@ impl Decoder {
 
     /// Creates a decoder with custom fountain/URI limits.
     #[must_use]
-    pub fn with_limits(limits: DecoderLimits) -> Self {
+    pub const fn with_limits(limits: DecoderLimits) -> Self {
         Self {
             fountain: fountain::Decoder::with_limits(limits),
             max_uri_len: limits.max_uri_len,
@@ -318,7 +318,10 @@ impl Decoder {
         }
 
         let decoded = bytewords::decode(&parsed.body, Style::Minimal)?;
-        let part = fountain::Part::from_cbor(decoded.as_slice())?;
+        let part = fountain::Part::from_cbor_with_max(
+            decoded.as_slice(),
+            self.fountain.max_fragment_data_length(),
+        )?;
         let (idx, idx_total) = parsed.indices.ok_or(Error::InvalidIndices)?;
         if part.sequence() != idx || part.sequence_count() != idx_total {
             return Err(Error::InvalidIndices);
@@ -350,7 +353,7 @@ impl Decoder {
 
     /// Total fragment count `K` (0 before any part).
     #[must_use]
-    pub fn fragment_count(&self) -> usize {
+    pub const fn fragment_count(&self) -> usize {
         self.fountain.fragment_count()
     }
 
@@ -369,9 +372,10 @@ pub fn qr_string(ur: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use minicbor::bytes::ByteVec;
+
     use super::*;
     use crate::rng::test_utils::make_message;
-    use minicbor::bytes::ByteVec;
 
     fn make_message_ur(length: usize, seed: &str) -> Vec<u8> {
         let message = make_message(seed, length);
@@ -455,8 +459,7 @@ mod tests {
     #[test]
     fn test_custom_encoder() {
         let data = b"Ten chars!";
-        let mut encoder =
-            Encoder::new(data, 5, &UrType::new("my-scheme").unwrap()).unwrap();
+        let mut encoder = Encoder::new(data, 5, &UrType::new("my-scheme").unwrap()).unwrap();
         assert_eq!(
             encoder.next_part().unwrap(),
             "ur:my-scheme/1-2/lpadaobkcywkwmhfwnfeghihjtcxiansvomopr"

@@ -5,6 +5,10 @@ use alloc::string::String;
 /// Errors that can occur while encoding or decoding Uniform Resources.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
+#[allow(
+    clippy::error_impl_error,
+    reason = "crate-root Error is the standard library-facing error type name"
+)]
 pub enum Error {
     // --- bytewords ---
     /// An unrecognized or malformed byteword token was encountered.

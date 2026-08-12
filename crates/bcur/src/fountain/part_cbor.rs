@@ -47,13 +47,22 @@ pub(crate) fn decode_part(bytes: &[u8], max_data_len: usize) -> Result<Part> {
 
 fn encode_u32(out: &mut Vec<u8>, v: u32) {
     if v <= 23 {
-        out.push(v as u8);
+        #[allow(clippy::cast_possible_truncation, reason = "v is checked <= 23")]
+        {
+            out.push(v as u8);
+        }
     } else if v <= 0xff {
         out.push(0x18);
-        out.push(v as u8);
+        #[allow(clippy::cast_possible_truncation, reason = "v is checked <= 0xff")]
+        {
+            out.push(v as u8);
+        }
     } else if v <= 0xffff {
         out.push(0x19);
-        out.extend_from_slice(&(v as u16).to_be_bytes());
+        #[allow(clippy::cast_possible_truncation, reason = "v is checked <= 0xffff")]
+        {
+            out.extend_from_slice(&(v as u16).to_be_bytes());
+        }
     } else {
         out.push(0x1a);
         out.extend_from_slice(&v.to_be_bytes());
@@ -63,16 +72,31 @@ fn encode_u32(out: &mut Vec<u8>, v: u32) {
 fn encode_bstr(out: &mut Vec<u8>, data: &[u8]) {
     let len = data.len();
     if len <= 23 {
-        out.push(0x40 | (len as u8));
+        #[allow(clippy::cast_possible_truncation, reason = "len is checked <= 23")]
+        {
+            out.push(0x40 | (len as u8));
+        }
     } else if len <= 0xff {
         out.push(0x58);
-        out.push(len as u8);
+        #[allow(clippy::cast_possible_truncation, reason = "len is checked <= 0xff")]
+        {
+            out.push(len as u8);
+        }
     } else if len <= 0xffff {
         out.push(0x59);
-        out.extend_from_slice(&(len as u16).to_be_bytes());
+        #[allow(clippy::cast_possible_truncation, reason = "len is checked <= 0xffff")]
+        {
+            out.extend_from_slice(&(len as u16).to_be_bytes());
+        }
     } else {
         out.push(0x5a);
-        out.extend_from_slice(&(len as u32).to_be_bytes());
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "bstr lengths used here fit u32 (fragment data is capped)"
+        )]
+        {
+            out.extend_from_slice(&(len as u32).to_be_bytes());
+        }
     }
     out.extend_from_slice(data);
 }
@@ -130,16 +154,15 @@ fn decode_bstr(bytes: &[u8], i: &mut usize, max_data_len: usize) -> Result<Vec<u
             let b1 = next_byte(bytes, i)?;
             let b2 = next_byte(bytes, i)?;
             let b3 = next_byte(bytes, i)?;
-            usize::try_from(u32::from_be_bytes([b0, b1, b2, b3])).map_err(|_| Error::InvalidPartCbor)?
+            usize::try_from(u32::from_be_bytes([b0, b1, b2, b3]))
+                .map_err(|_| Error::InvalidPartCbor)?
         }
         _ => return Err(Error::InvalidPartCbor),
     };
     if len > max_data_len {
         return Err(Error::ResourceLimit("fragment_data"));
     }
-    let end = i
-        .checked_add(len)
-        .ok_or(Error::InvalidPartCbor)?;
+    let end = i.checked_add(len).ok_or(Error::InvalidPartCbor)?;
     let slice = bytes.get(*i..end).ok_or(Error::InvalidPartCbor)?;
     *i = end;
     Ok(slice.to_vec())
@@ -151,7 +174,13 @@ mod tests {
 
     #[test]
     fn roundtrip_and_golden() {
-        let part = Part::from_fields(1, 9, 256, 23_570_951, hex::decode("916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c").unwrap());
+        let part = Part::from_fields(
+            1,
+            9,
+            256,
+            23_570_951,
+            hex::decode("916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c").unwrap(),
+        );
         let cbor = encode_part(&part);
         assert_eq!(
             hex::encode(&cbor),

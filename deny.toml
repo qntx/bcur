@@ -1,0 +1,37 @@
+# cargo-deny configuration for bcur
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "warn"
+# `dcbor` transitively depends on unmaintained `paste` (RUSTSEC-2024-0436).
+# Ignore until upstream switches; do not expand ignore list casually.
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "transitive via optional dcbor; revisit in 0.2 typed layer" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSD-2-Clause-Patent",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Zlib",
+    "BlueOak-1.0.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

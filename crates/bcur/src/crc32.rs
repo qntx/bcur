@@ -8,6 +8,10 @@ pub(crate) const fn crc32() -> crc::Crc<u32> {
 
 /// Computes the CRC-32 checksum of `data`.
 #[must_use]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "crc crate checksum is not const"
+)]
 pub(crate) fn checksum(data: &[u8]) -> u32 {
     crc32().checksum(data)
 }

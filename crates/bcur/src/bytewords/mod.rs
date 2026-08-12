@@ -15,13 +15,12 @@
 use alloc::{string::String, vec::Vec};
 
 use crate::constants::BYTES_INDEXED_BY_HASH;
-use crate::crc32;
-use crate::{Error, Result};
-
-/// BCR-2020-012 four-letter bytewords table.
-pub use crate::constants::WORDS;
 /// Minimal two-letter (first+last) table used by UR bodies.
 pub use crate::constants::MINIMALS;
+/// BCR-2020-012 four-letter bytewords table.
+pub use crate::constants::WORDS;
+use crate::crc32;
+use crate::{Error, Result};
 
 /// The three bytewords encoding styles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -54,8 +53,8 @@ pub fn encode_raw(data: &[u8], style: Style) -> String {
 
 fn encode_words(data: impl Iterator<Item = u8>, style: Style) -> String {
     let words: Vec<&str> = match style {
-        Style::Standard | Style::Uri => data.map(|b| WORDS[b as usize]).collect(),
-        Style::Minimal => data.map(|b| MINIMALS[b as usize]).collect(),
+        Style::Standard | Style::Uri => data.map(word_at).collect(),
+        Style::Minimal => data.map(minimal_at).collect(),
     };
     let separator = match style {
         Style::Standard => " ",
@@ -85,7 +84,7 @@ pub fn decode(encoded: &str, style: Style) -> Result<Vec<u8>> {
 }
 
 fn decode_minimal(encoded: &str) -> Result<Vec<u8>> {
-    if !encoded.len().is_multiple_of(2) {
+    if encoded.len() % 2 != 0 {
         return Err(Error::InvalidBytewordsLength);
     }
     let parts = (0..encoded.len())
@@ -94,21 +93,31 @@ fn decode_minimal(encoded: &str) -> Result<Vec<u8>> {
     decode_parts(parts, true)
 }
 
+#[inline]
+fn word_at(b: u8) -> &'static str {
+    // Full 256-entry table; `get` is infallible for any `u8`.
+    WORDS.get(usize::from(b)).copied().unwrap_or("")
+}
+
+#[inline]
+fn minimal_at(b: u8) -> &'static str {
+    MINIMALS.get(usize::from(b)).copied().unwrap_or("")
+}
+
 fn encoded_byte(part: &str, minimal: bool) -> Option<u8> {
     let bytes = part.as_bytes();
     let expected_len = if minimal { 2 } else { 4 };
     if bytes.len() != expected_len {
         return None;
     }
-    let hash = usize::try_from(
-        (25 * u32::from(bytes[0]) + 11 * u32::from(bytes[expected_len - 1])) % 628,
-    )
-    .ok()?;
+    let first = *bytes.first()?;
+    let last = *bytes.get(expected_len - 1)?;
+    let hash = usize::try_from((25 * u32::from(first) + 11 * u32::from(last)) % 628).ok()?;
     let byte = BYTES_INDEXED_BY_HASH.get(hash).copied().flatten()?;
     let expected = if minimal {
-        MINIMALS[byte as usize]
+        minimal_at(byte)
     } else {
-        WORDS[byte as usize]
+        word_at(byte)
     };
     (part == expected).then_some(byte)
 }
@@ -149,11 +158,11 @@ pub fn canonicalize_byteword(token: &str) -> Option<String> {
     match bytes.len() {
         4 => {
             let byte = encoded_byte(&lower, false)?;
-            Some(String::from(WORDS[byte as usize]))
+            Some(String::from(word_at(byte)))
         }
         2 => {
             let byte = encoded_byte(&lower, true)?;
-            Some(String::from(WORDS[byte as usize]))
+            Some(String::from(word_at(byte)))
         }
         _ => None,
     }

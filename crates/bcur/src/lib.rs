@@ -46,8 +46,5 @@ pub use ur::{
     parse, parse_normalized, qr_string,
 };
 
-/// Optional typed dCBOR layer (feature = `dcbor`). Placeholder until 0.2.
 #[cfg(feature = "dcbor")]
-pub mod typed {
-    //! Typed `Ur` value objects and codable traits (planned for 0.2.0).
-}
+pub mod typed;

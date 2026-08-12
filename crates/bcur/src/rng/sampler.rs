@@ -1,4 +1,12 @@
-//! Walker's alias method sampler (ordered partition matching ur-rs).
+//! Walker's alias method sampler (ordered partition matching `ur-rs`).
+//!
+//! Indexing uses known-valid table indices produced by the algorithm; panicking
+//! on OOB would indicate a logic bug rather than hostile input.
+
+#![allow(
+    clippy::indexing_slicing,
+    reason = "alias-table construction uses closed-form indices 0..count matching ur-rs"
+)]
 
 use alloc::vec::Vec;
 
@@ -14,7 +22,8 @@ pub(crate) struct Weighted {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    reason = "alias method uses f64 probabilities; table sizes match ur-rs exactly"
 )]
 impl Weighted {
     /// Builds a sampler from non-negative weights that sum to a positive value.

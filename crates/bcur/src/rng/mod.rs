@@ -5,6 +5,5 @@ mod xoshiro;
 
 pub(crate) use sampler::Weighted;
 pub(crate) use xoshiro::Xoshiro256;
-
 #[cfg(test)]
 pub(crate) use xoshiro::test_utils;

@@ -60,6 +60,7 @@ impl Default for DecoderLimits {
 #[derive(Debug)]
 pub struct Encoder {
     parts: Vec<Vec<u8>>,
+    sequence_count: u32,
     message_length: u32,
     checksum: u32,
     current_sequence: u32,
@@ -79,17 +80,16 @@ impl Encoder {
         if max_fragment_length == 0 {
             return Err(Error::InvalidFragmentLen);
         }
-        if message.len() > u32::MAX as usize {
-            return Err(Error::ResourceLimit("message_length"));
-        }
-        let fragment_length = fragment_length(message.len(), max_fragment_length);
-        let fragments = partition(message.to_vec(), fragment_length);
-        if fragments.len() > u32::MAX as usize {
-            return Err(Error::ResourceLimit("fragment_count"));
-        }
+        let message_length =
+            u32::try_from(message.len()).map_err(|_| Error::ResourceLimit("message_length"))?;
+        let frag_len = fragment_length(message.len(), max_fragment_length);
+        let fragments = partition(message.to_vec(), frag_len);
+        let sequence_count =
+            u32::try_from(fragments.len()).map_err(|_| Error::ResourceLimit("fragment_count"))?;
         Ok(Self {
             parts: fragments,
-            message_length: u32::try_from(message.len()).map_err(|_| Error::ResourceLimit("message_length"))?,
+            sequence_count,
+            message_length,
             checksum: crc32::checksum(message),
             current_sequence: 0,
         })
@@ -103,14 +103,14 @@ impl Encoder {
 
     /// Number of source fragments `K`.
     #[must_use]
-    pub fn fragment_count(&self) -> u32 {
-        u32::try_from(self.parts.len()).unwrap_or(u32::MAX)
+    pub const fn fragment_count(&self) -> u32 {
+        self.sequence_count
     }
 
     /// Whether all original segments have been emitted at least once.
     #[must_use]
-    pub fn complete(&self) -> bool {
-        self.current_sequence as usize >= self.parts.len()
+    pub const fn complete(&self) -> bool {
+        self.current_sequence >= self.sequence_count
     }
 
     /// Emits the next fountain part.
@@ -128,13 +128,15 @@ impl Encoder {
             self.parts.len(),
             self.checksum,
         );
-        let mut mixed = alloc::vec![0_u8; self.parts[0].len()];
+        let first = self.parts.first().ok_or(Error::DecoderState)?;
+        let mut mixed = alloc::vec![0_u8; first.len()];
         for item in indexes {
-            xor(&mut mixed, &self.parts[item]);
+            let fragment = self.parts.get(item).ok_or(Error::DecoderState)?;
+            xor(&mut mixed, fragment);
         }
         Ok(Part {
             sequence: self.current_sequence,
-            sequence_count: self.fragment_count(),
+            sequence_count: self.sequence_count,
             message_length: self.message_length,
             checksum: self.checksum,
             data: mixed,
@@ -172,7 +174,7 @@ impl Decoder {
 
     /// Creates a decoder with custom limits.
     #[must_use]
-    pub fn with_limits(limits: DecoderLimits) -> Self {
+    pub const fn with_limits(limits: DecoderLimits) -> Self {
         Self {
             decoded: BTreeMap::new(),
             received: BTreeSet::new(),
@@ -193,7 +195,7 @@ impl Decoder {
         self.poisoned.is_some()
     }
 
-    fn poison(&mut self, reason: &'static str) -> Error {
+    const fn poison(&mut self, reason: &'static str) -> Error {
         self.poisoned = Some(reason);
         Error::ResourceLimit(reason)
     }
@@ -277,61 +279,71 @@ impl Decoder {
                 .cloned()
                 .collect();
             for indexes in to_process {
-                let mut part = self.buffer.remove(&indexes).ok_or(Error::DecoderState)?;
-                let mut new_indexes = indexes;
-                let to_remove = new_indexes
-                    .iter()
-                    .position(|&x| x == index)
-                    .ok_or(Error::DecoderState)?;
-                new_indexes.remove(to_remove);
-                xor(&mut part.data, &simple.data);
-                if new_indexes.len() == 1 {
-                    let idx = *new_indexes.first().ok_or(Error::DecoderState)?;
-                    self.decoded.insert(idx, part.clone());
-                    self.queue.push((idx, part));
-                } else {
-                    if self.buffer.len() >= self.limits.max_buffer_parts {
-                        return Err(self.poison("buffer_parts"));
-                    }
-                    self.buffer.insert(new_indexes, part);
-                }
+                self.reduce_buffered_part(indexes, index, &simple)?;
             }
         }
         Ok(())
     }
 
+    fn reduce_buffered_part(
+        &mut self,
+        indexes: Vec<usize>,
+        known_index: usize,
+        simple: &Part,
+    ) -> Result<()> {
+        let mut part = self.buffer.remove(&indexes).ok_or(Error::DecoderState)?;
+        let mut new_indexes = indexes;
+        let to_remove = new_indexes
+            .iter()
+            .position(|&x| x == known_index)
+            .ok_or(Error::DecoderState)?;
+        new_indexes.remove(to_remove);
+        xor(&mut part.data, &simple.data);
+        self.insert_reduced(new_indexes, part)
+    }
+
     fn process_complex(&mut self, mut part: Part) -> Result<()> {
         let mut indexes = part.indexes();
-        let to_remove: Vec<usize> = indexes
+        let known: Vec<usize> = indexes
             .iter()
             .copied()
             .filter(|idx| self.decoded.contains_key(idx))
             .collect();
-        if indexes.len() == to_remove.len() {
+        if indexes.len() == known.len() {
             return Ok(());
         }
-        for remove in to_remove {
-            let idx_to_remove = indexes
+        for remove in known {
+            let pos = indexes
                 .iter()
                 .position(|&x| x == remove)
                 .ok_or(Error::DecoderState)?;
-            indexes.remove(idx_to_remove);
+            indexes.remove(pos);
             xor(
                 &mut part.data,
                 &self.decoded.get(&remove).ok_or(Error::DecoderState)?.data,
             );
         }
+        self.insert_reduced(indexes, part)
+    }
+
+    fn insert_reduced(&mut self, indexes: Vec<usize>, part: Part) -> Result<()> {
         if indexes.len() == 1 {
             let idx = *indexes.first().ok_or(Error::DecoderState)?;
             self.decoded.insert(idx, part.clone());
             self.queue.push((idx, part));
-        } else {
-            if self.buffer.len() >= self.limits.max_buffer_parts {
-                return Err(self.poison("buffer_parts"));
-            }
-            self.buffer.insert(indexes, part);
+            return Ok(());
         }
+        if self.buffer.len() >= self.limits.max_buffer_parts {
+            return Err(self.poison("buffer_parts"));
+        }
+        self.buffer.insert(indexes, part);
         Ok(())
+    }
+
+    /// Max fragment data length configured for this decoder.
+    #[must_use]
+    pub const fn max_fragment_data_length(&self) -> usize {
+        self.limits.max_fragment_data_length
     }
 
     /// Whether all source fragments have been recovered.
@@ -415,7 +427,7 @@ pub struct Part {
 }
 
 impl Part {
-    pub(crate) fn from_fields(
+    pub(crate) const fn from_fields(
         sequence: u32,
         sequence_count: u32,
         message_length: u32,
@@ -528,11 +540,19 @@ pub(crate) fn partition(mut data: Vec<u8>, fragment_length: usize) -> Vec<Vec<u8
 }
 
 #[must_use]
-pub(crate) fn choose_fragments(sequence: usize, fragment_count: usize, checksum: u32) -> Vec<usize> {
+pub(crate) fn choose_fragments(
+    sequence: usize,
+    fragment_count: usize,
+    checksum: u32,
+) -> Vec<usize> {
     if sequence <= fragment_count {
         return alloc::vec![sequence - 1];
     }
-    #[allow(clippy::cast_possible_truncation)]
+    // Sequence is already validated as a wire `u32` at the encoder/decoder edge.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "UR wire sequence is u32; callers only pass values that fit"
+    )]
     let sequence_u32 = sequence as u32;
     let mut seed = [0u8; 8];
     seed[0..4].copy_from_slice(&sequence_u32.to_be_bytes());
@@ -546,7 +566,11 @@ pub(crate) fn choose_fragments(sequence: usize, fragment_count: usize, checksum:
 }
 
 fn xor(v1: &mut [u8], v2: &[u8]) {
-    debug_assert_eq!(v1.len(), v2.len());
+    debug_assert_eq!(
+        v1.len(),
+        v2.len(),
+        "fountain fragments must share equal length"
+    );
     for (x1, &x2) in v1.iter_mut().zip(v2.iter()) {
         *x1 ^= x2;
     }

@@ -1,13 +1,18 @@
 //! `bcur` — a Rust implementation of [Uniform Resources](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-005-ur.md).
 //!
+//! # Status
+//!
+//! **0.1** ships the transport stack: bytewords, fountain codes, multi-part UR,
+//! and [`DecoderLimits`]. Typed dCBOR (`feature = "dcbor"`) is a stub until 0.2.
+//!
 //! # Features
 //!
 //! - **`std`** (default): host builds.
-//! - **`dcbor`**: optional typed dCBOR layer (implies `std`; available from 0.2).
-//! - **`bytemoji`**: optional bytemoji helpers.
+//! - **`dcbor`**: optional typed dCBOR layer (implies `std`; API from 0.2).
+//! - **`bytemoji`**: optional bytemoji helpers (planned).
 //!
-//! Core transport (bytewords, fountain, UR) always requires `alloc` and supports
-//! `no_std` via `--no-default-features`.
+//! Core transport always requires `alloc` and supports `no_std` via
+//! `--no-default-features`.
 //!
 //! # Example
 //!

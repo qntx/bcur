@@ -4,7 +4,7 @@ default-members = ["crates/bcur"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 # Minimum supported Rust version. `edition = "2024"` was stabilized in 1.85;
 # we pin to 1.85 here and enforce it in CI. Bumping this is a breaking change.

@@ -2,17 +2,22 @@
 
 A Rust implementation of [Uniform Resources](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-005-ur.md) (URs).
 
-URs encode binary payloads as URI-friendly strings optimized for QR codes and unreliable channels, using [bytewords](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-012-bytewords.md) and fountain codes for multi-part transfer.
+URs encode binary payloads as URI-friendly strings for QR codes and unreliable channels, using [bytewords](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-012-bytewords.md) and fountain codes for multi-part transfer.
+
+## Status (0.1)
+
+Transport only: bytewords + fountain + multi-part UR + `DecoderLimits`.  
+Typed dCBOR is a 0.2 feature stub; bytemoji is planned.
 
 ## Features
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `std` | yes | Host / std builds |
-| `dcbor` | no | Typed dCBOR layer (implies `std`) |
-| `bytemoji` | no | Bytemoji helpers |
+| `dcbor` | no | Typed dCBOR layer (stub until 0.2; implies `std`) |
+| `bytemoji` | no | Bytemoji helpers (planned) |
 
-`no_std` + `alloc` is supported with `--no-default-features`.
+`no_std` + `alloc`: `--no-default-features`.
 
 ## Quick start
 

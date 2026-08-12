@@ -52,7 +52,7 @@ Default limit numbers are experimental before 1.0; hosts with fixed budgets shou
 ## Features
 
 | Feature | Default | Description |
-|---------|---------|-------------|
+| --------- | --------- | ------------- |
 | `std` | yes | Host builds |
 | `dcbor` | no | Typed dCBOR layer (**stub** until 0.2) |
 | `bytemoji` | no | Bytemoji helpers (**planned**) |

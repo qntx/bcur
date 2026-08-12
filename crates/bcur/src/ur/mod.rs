@@ -375,6 +375,7 @@ mod tests {
     use minicbor::bytes::ByteVec;
 
     use super::*;
+    use crate::fountain::DecoderLimits;
     use crate::rng::test_utils::make_message;
 
     fn make_message_ur(length: usize, seed: &str) -> Vec<u8> {
@@ -486,5 +487,82 @@ mod tests {
         let (kind, data) = decode(&ur).unwrap();
         assert_eq!(kind, Kind::SinglePart);
         assert_eq!(data, cbor);
+    }
+
+    #[test]
+    fn test_parse_and_decode_with_type() {
+        let ur = encode(b"data", &UrType::bytes()).unwrap();
+        let parsed = parse(&ur).unwrap();
+        assert_eq!(parsed.kind, Kind::SinglePart);
+        assert_eq!(parsed.ur_type.as_str(), "bytes");
+        assert!(parsed.indices.is_none());
+
+        let (ty, kind, payload) = decode_with_type(&ur).unwrap();
+        assert_eq!(ty.as_str(), "bytes");
+        assert_eq!(kind, Kind::SinglePart);
+        assert_eq!(payload, b"data");
+    }
+
+    #[test]
+    fn test_invalid_type_and_indices() {
+        assert!(matches!(UrType::new(""), Err(Error::InvalidType)));
+        assert!(matches!(UrType::new("Bad_Type"), Err(Error::InvalidType)));
+        assert!(matches!(
+            parse("ur:bytes/0-1/aeadaolazmjendeoti"),
+            Err(Error::InvalidIndices)
+        ));
+        assert!(matches!(
+            parse("ur:bytes/1-0/aeadaolazmjendeoti"),
+            Err(Error::InvalidIndices)
+        ));
+        assert!(matches!(
+            parse("ur:bytes/foo/aeadaolazmjendeoti"),
+            Err(Error::InvalidIndices)
+        ));
+    }
+
+    #[test]
+    fn test_expected_type_and_uri_limit() {
+        let data = b"Ten chars!".repeat(5);
+        let mut enc = Encoder::new(&data, 5, &UrType::new("alpha").unwrap()).unwrap();
+        let part = enc.next_part().unwrap();
+
+        let mut decoder = Decoder::default().with_expected_type(UrType::new("beta").unwrap());
+        assert!(matches!(
+            decoder.receive(&part),
+            Err(Error::UnexpectedType { .. })
+        ));
+
+        let limits = DecoderLimits {
+            max_uri_len: 8,
+            ..DecoderLimits::default()
+        };
+        let mut short = Decoder::with_limits(limits);
+        assert!(matches!(
+            short.receive(&part),
+            Err(Error::ResourceLimit("uri_len"))
+        ));
+    }
+
+    #[test]
+    fn test_multipart_index_mismatch() {
+        let data = b"Ten chars!".repeat(5);
+        let mut enc = Encoder::bytes(&data, 5).unwrap();
+        let part = enc.next_part().unwrap();
+        // Corrupt path indices while keeping a valid multi-part shape.
+        let corrupted = part.replacen("/1-", "/2-", 1);
+        let mut decoder = Decoder::default();
+        assert!(matches!(
+            decoder.receive(&corrupted),
+            Err(Error::InvalidIndices)
+        ));
+    }
+
+    #[test]
+    fn test_empty_single_part() {
+        let ur = encode(&[], &UrType::bytes()).unwrap();
+        let (kind, payload) = decode(&ur).unwrap();
+        assert_eq!(kind, Kind::SinglePart);
+        assert!(payload.is_empty());
     }
 }

@@ -56,5 +56,5 @@ fmt-check:
 doc:
     cargo +nightly doc --workspace --all-features --no-deps
 
-# Full quality gate (no network)
-quality: fmt-check clippy test check-no-std
+# Full quality gate (no network except deny advisory DB if present)
+quality: fmt-check clippy test check-no-std deny

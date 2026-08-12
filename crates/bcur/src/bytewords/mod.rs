@@ -74,13 +74,15 @@ pub fn decode(encoded: &str, style: Style) -> Result<Vec<u8>> {
     if !encoded.is_ascii() {
         return Err(Error::NonAscii);
     }
+    // BCR-2020-012 encodings are case-insensitive; normalize before lookup.
+    let lowered = encoded.to_ascii_lowercase();
 
     let separator = match style {
         Style::Standard => ' ',
         Style::Uri => '-',
-        Style::Minimal => return decode_minimal(encoded),
+        Style::Minimal => return decode_minimal(&lowered),
     };
-    decode_parts(encoded.split(separator), false)
+    decode_parts(lowered.split(separator), false)
 }
 
 fn decode_minimal(encoded: &str) -> Result<Vec<u8>> {
@@ -260,5 +262,29 @@ mod tests {
     fn test_single_zero() {
         assert_eq!(encode(&[0], Style::Minimal), "aetdaowslg");
         assert_eq!(decode("aetdaowslg", Style::Minimal).unwrap(), vec![0]);
+    }
+
+    #[test]
+    fn test_case_insensitive_decode() {
+        let input = vec![0_u8, 1, 2];
+        let standard = encode(&input, Style::Standard);
+        let minimal = encode(&input, Style::Minimal);
+        assert_eq!(
+            decode(&standard.to_ascii_uppercase(), Style::Standard).unwrap(),
+            input
+        );
+        assert_eq!(
+            decode(&minimal.to_ascii_uppercase(), Style::Minimal).unwrap(),
+            input
+        );
+    }
+
+    #[test]
+    fn test_encode_raw_and_canonicalize() {
+        assert_eq!(encode_raw(&[0], Style::Minimal), "ae");
+        assert_eq!(canonicalize_byteword("ABLE"), Some(String::from("able")));
+        assert_eq!(canonicalize_byteword("ae"), Some(String::from("able")));
+        assert_eq!(canonicalize_byteword("nope"), None);
+        assert_eq!(canonicalize_byteword("a"), None);
     }
 }

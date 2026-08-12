@@ -116,18 +116,33 @@ fn decode_u32(bytes: &[u8], i: &mut usize) -> Result<u32> {
     }
     match ai {
         n @ 0..=23 => Ok(u32::from(n)),
-        24 => Ok(u32::from(next_byte(bytes, i)?)),
+        24 => {
+            let v = u32::from(next_byte(bytes, i)?);
+            // Shortest-form: values 0..=23 must use the compact ai encoding.
+            if v <= 23 {
+                return Err(Error::InvalidPartCbor);
+            }
+            Ok(v)
+        }
         25 => {
             let b0 = next_byte(bytes, i)?;
             let b1 = next_byte(bytes, i)?;
-            Ok(u32::from(u16::from_be_bytes([b0, b1])))
+            let v = u32::from(u16::from_be_bytes([b0, b1]));
+            if v <= 0xff {
+                return Err(Error::InvalidPartCbor);
+            }
+            Ok(v)
         }
         26 => {
             let b0 = next_byte(bytes, i)?;
             let b1 = next_byte(bytes, i)?;
             let b2 = next_byte(bytes, i)?;
             let b3 = next_byte(bytes, i)?;
-            Ok(u32::from_be_bytes([b0, b1, b2, b3]))
+            let v = u32::from_be_bytes([b0, b1, b2, b3]);
+            if v <= 0xffff {
+                return Err(Error::InvalidPartCbor);
+            }
+            Ok(v)
         }
         // Reject u64 and indefinite forms for shortest-form / schema strictness.
         _ => Err(Error::InvalidPartCbor),
@@ -143,19 +158,33 @@ fn decode_bstr(bytes: &[u8], i: &mut usize, max_data_len: usize) -> Result<Vec<u
     }
     let len = match ai {
         n @ 0..=23 => usize::from(n),
-        24 => usize::from(next_byte(bytes, i)?),
+        24 => {
+            let len = usize::from(next_byte(bytes, i)?);
+            if len <= 23 {
+                return Err(Error::InvalidPartCbor);
+            }
+            len
+        }
         25 => {
             let b0 = next_byte(bytes, i)?;
             let b1 = next_byte(bytes, i)?;
-            usize::from(u16::from_be_bytes([b0, b1]))
+            let len = usize::from(u16::from_be_bytes([b0, b1]));
+            if len <= 0xff {
+                return Err(Error::InvalidPartCbor);
+            }
+            len
         }
         26 => {
             let b0 = next_byte(bytes, i)?;
             let b1 = next_byte(bytes, i)?;
             let b2 = next_byte(bytes, i)?;
             let b3 = next_byte(bytes, i)?;
-            usize::try_from(u32::from_be_bytes([b0, b1, b2, b3]))
-                .map_err(|_| Error::InvalidPartCbor)?
+            let len = usize::try_from(u32::from_be_bytes([b0, b1, b2, b3]))
+                .map_err(|_| Error::InvalidPartCbor)?;
+            if len <= 0xffff {
+                return Err(Error::InvalidPartCbor);
+            }
+            len
         }
         _ => return Err(Error::InvalidPartCbor),
     };
@@ -188,5 +217,39 @@ mod tests {
         );
         let decoded = decode_part(&cbor, 8192).unwrap();
         assert_eq!(decoded, part);
+    }
+
+    #[test]
+    fn rejects_non_shortest_integer() {
+        // array(5) with sequence encoded as 0x18 0x01 (non-shortest for 1)
+        let cbor = hex::decode(
+            "851801091901001a0167aa07581d916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c",
+        )
+        .unwrap();
+        assert!(matches!(
+            decode_part(&cbor, 8192),
+            Err(Error::InvalidPartCbor)
+        ));
+    }
+
+    #[test]
+    fn rejects_trailing_bytes() {
+        let part = Part::from_fields(1, 1, 1, 0, alloc::vec![0xab]);
+        let mut cbor = encode_part(&part);
+        cbor.push(0x00);
+        assert!(matches!(
+            decode_part(&cbor, 8192),
+            Err(Error::InvalidPartCbor)
+        ));
+    }
+
+    #[test]
+    fn rejects_oversized_data() {
+        let part = Part::from_fields(1, 1, 1, 0, alloc::vec![0; 32]);
+        let cbor = encode_part(&part);
+        assert!(matches!(
+            decode_part(&cbor, 16),
+            Err(Error::ResourceLimit("fragment_data"))
+        ));
     }
 }

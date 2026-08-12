@@ -47,3 +47,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: bcur (no_std + alloc)
         run: cargo check -p bcur --target thumbv7m-none-eabi --no-default-features
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2

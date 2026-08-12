@@ -132,7 +132,7 @@ impl Encoder {
         let mut mixed = alloc::vec![0_u8; first.len()];
         for item in indexes {
             let fragment = self.parts.get(item).ok_or(Error::DecoderState)?;
-            xor(&mut mixed, fragment);
+            xor(&mut mixed, fragment)?;
         }
         Ok(Part {
             sequence: self.current_sequence,
@@ -256,18 +256,24 @@ impl Decoder {
         }
         self.received.insert(indexes);
         if part.is_simple() {
-            self.process_simple(part)?;
+            self.enqueue_simple(part)?;
         } else {
             self.process_complex(part)?;
         }
+        // Always drain the reduction queue after ingest so that a complex part
+        // reduced to a simple fragment still cascades into the XOR buffer.
+        self.process_queue()?;
         Ok(true)
     }
 
-    fn process_simple(&mut self, part: Part) -> Result<()> {
+    fn enqueue_simple(&mut self, part: Part) -> Result<()> {
         let index = *part.indexes().first().ok_or(Error::DecoderState)?;
+        if self.decoded.contains_key(&index) {
+            return Ok(());
+        }
         self.decoded.insert(index, part.clone());
         self.queue.push((index, part));
-        self.process_queue()
+        Ok(())
     }
 
     fn process_queue(&mut self) -> Result<()> {
@@ -298,7 +304,7 @@ impl Decoder {
             .position(|&x| x == known_index)
             .ok_or(Error::DecoderState)?;
         new_indexes.remove(to_remove);
-        xor(&mut part.data, &simple.data);
+        xor(&mut part.data, &simple.data)?;
         self.insert_reduced(new_indexes, part)
     }
 
@@ -321,7 +327,7 @@ impl Decoder {
             xor(
                 &mut part.data,
                 &self.decoded.get(&remove).ok_or(Error::DecoderState)?.data,
-            );
+            )?;
         }
         self.insert_reduced(indexes, part)
     }
@@ -329,6 +335,9 @@ impl Decoder {
     fn insert_reduced(&mut self, indexes: Vec<usize>, part: Part) -> Result<()> {
         if indexes.len() == 1 {
             let idx = *indexes.first().ok_or(Error::DecoderState)?;
+            if self.decoded.contains_key(&idx) {
+                return Ok(());
+            }
             self.decoded.insert(idx, part.clone());
             self.queue.push((idx, part));
             return Ok(());
@@ -565,15 +574,14 @@ pub(crate) fn choose_fragments(
     shuffled
 }
 
-fn xor(v1: &mut [u8], v2: &[u8]) {
-    debug_assert_eq!(
-        v1.len(),
-        v2.len(),
-        "fountain fragments must share equal length"
-    );
-    for (x1, &x2) in v1.iter_mut().zip(v2.iter()) {
+fn xor(v1: &mut [u8], v2: &[u8]) -> Result<()> {
+    if v1.len() != v2.len() {
+        return Err(Error::DecoderState);
+    }
+    for (x1, x2) in v1.iter_mut().zip(v2.iter()) {
         *x1 ^= x2;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -672,5 +680,151 @@ mod tests {
             indexes.sort_unstable();
             assert_eq!(&indexes, e);
         }
+    }
+
+    /// Complex part reduced to a simple fragment must cascade into the buffer.
+    #[test]
+    fn test_complex_to_simple_cascades_into_buffer() {
+        let (target, known, reducer) =
+            cascade_fixture().expect("need mixed parts that exercise buffer cascade");
+
+        let mut decoder = Decoder::default();
+        decoder.receive(target).unwrap();
+        decoder.receive(known).unwrap();
+        decoder.receive(reducer).unwrap();
+
+        // known simple + reducer-derived simple + cascade of buffered pair
+        assert!(
+            decoder.resolved_fragment_count().unwrap_or(0) >= 3,
+            "cascade failed: resolved={:?} buffer should yield the third fragment",
+            decoder.resolved_fragment_count()
+        );
+    }
+
+    /// Finds `(buffered degree-2, known simple, reducer mixed)` for cascade tests.
+    fn cascade_fixture() -> Option<(Part, Part, Part)> {
+        let message = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345".to_vec();
+        let mut encoder = Encoder::new(&message, 8).ok()?;
+        let k = encoder.fragment_count() as usize;
+        let mut parts = Vec::new();
+        for _ in 0..k.saturating_mul(30) {
+            parts.push(encoder.next_part().ok()?);
+        }
+
+        let mut simple_by_index: BTreeMap<usize, Part> = BTreeMap::new();
+        for part in &parts {
+            if let Some(idx) = part
+                .indexes()
+                .into_iter()
+                .next()
+                .filter(|_| part.is_simple())
+            {
+                simple_by_index.entry(idx).or_insert_with(|| part.clone());
+            }
+        }
+
+        let target = parts.iter().find(|p| p.indexes().len() == 2)?.clone();
+        let mut ends = target.indexes();
+        ends.sort_unstable();
+        let end_lo = *ends.first()?;
+        let end_hi = *ends.get(1)?;
+
+        parts.iter().find_map(|part| {
+            if part.is_simple() {
+                return None;
+            }
+            let idxs = part.indexes();
+            if idxs.len() != 2 {
+                return None;
+            }
+            let left = *idxs.first()?;
+            let right = *idxs.get(1)?;
+            candidate_reducer(end_lo, end_hi, left, right, part, &target, &simple_by_index).or_else(
+                || candidate_reducer(end_lo, end_hi, right, left, part, &target, &simple_by_index),
+            )
+        })
+    }
+
+    fn candidate_reducer(
+        end_lo: usize,
+        end_hi: usize,
+        recovered: usize,
+        other: usize,
+        reducer: &Part,
+        target: &Part,
+        simple_by_index: &BTreeMap<usize, Part>,
+    ) -> Option<(Part, Part, Part)> {
+        let recovers_endpoint = recovered == end_lo || recovered == end_hi;
+        let other_outside_pair = other != end_lo && other != end_hi;
+        if !(recovers_endpoint && other_outside_pair) {
+            return None;
+        }
+        let known = simple_by_index.get(&other)?.clone();
+        Some((target.clone(), known, reducer.clone()))
+    }
+
+    #[test]
+    fn test_inconsistent_part_rejected() {
+        let message = make_message("Wolf", 64);
+        let mut encoder_a = Encoder::new(&message, 16).unwrap();
+        let mut encoder_b = Encoder::new(&make_message("Other", 64), 16).unwrap();
+        let mut decoder = Decoder::default();
+        decoder.receive(encoder_a.next_part().unwrap()).unwrap();
+        assert!(matches!(
+            decoder.receive(encoder_b.next_part().unwrap()),
+            Err(Error::InconsistentPart)
+        ));
+    }
+
+    #[test]
+    fn test_duplicate_part_ignored() {
+        let message = make_message("Wolf", 64);
+        let mut encoder = Encoder::new(&message, 16).unwrap();
+        let part = encoder.next_part().unwrap();
+        let mut decoder = Decoder::default();
+        assert!(decoder.receive(part.clone()).unwrap());
+        assert!(!decoder.receive(part).unwrap());
+    }
+
+    #[test]
+    fn test_resource_limit_fragment_count_poisons() {
+        let limits = DecoderLimits {
+            max_fragment_count: 1,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = Decoder::with_limits(limits);
+        let message = make_message("Wolf", 64);
+        let mut encoder = Encoder::new(&message, 8).unwrap();
+        assert!(encoder.fragment_count() > 1);
+        assert!(matches!(
+            decoder.receive(encoder.next_part().unwrap()),
+            Err(Error::ResourceLimit("fragment_count"))
+        ));
+        assert!(decoder.is_poisoned());
+        // Fail-closed: subsequent receives keep failing.
+        assert!(matches!(
+            decoder.receive(encoder.next_part().unwrap()),
+            Err(Error::ResourceLimit("fragment_count"))
+        ));
+    }
+
+    #[test]
+    fn test_empty_part_and_invalid_sequence() {
+        let mut decoder = Decoder::default();
+        let empty = Part::from_fields(1, 1, 1, 0, Vec::new());
+        assert!(matches!(decoder.receive(empty), Err(Error::EmptyPart)));
+        let zero_seq = Part::from_fields(0, 1, 1, 0, alloc::vec![0]);
+        assert!(matches!(
+            decoder.receive(zero_seq),
+            Err(Error::InvalidSequence)
+        ));
+    }
+
+    #[test]
+    fn test_invalid_max_fragment_len() {
+        assert!(matches!(
+            Encoder::new(b"x", 0),
+            Err(Error::InvalidFragmentLen)
+        ));
     }
 }

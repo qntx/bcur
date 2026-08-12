@@ -1,10 +1,9 @@
 //! Multi-part UR encode/decode throughput.
-//!
-//! `criterion_group!` / `criterion_main!` expand to items without rustdoc.
 
 #![allow(
+    unused_crate_dependencies,
     missing_docs,
-    reason = "criterion macros expand to undocumented harness items"
+    reason = "bench crates inherit package deps; criterion macros emit undocumented items"
 )]
 
 use bcur::{Decoder, Encoder};

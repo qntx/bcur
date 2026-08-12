@@ -49,5 +49,6 @@ pub use ur::{
 #[cfg(feature = "dcbor")]
 pub mod typed;
 
+// `criterion` is a dev-dependency used only by `benches/`; silence the lib-target lint.
 #[cfg(test)]
-mod integration;
+use criterion as _;

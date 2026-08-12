@@ -1,16 +1,23 @@
-//! Interop checks against ur-rs 0.5 public vectors (MIT; see `THIRD_PARTY.md`).
+//! Integration interop checks against ur-rs 0.5 public vectors.
+//!
+//! Vector tables originate from ur-rs (MIT); see repository `THIRD_PARTY.md`.
 
-use crate::{Decoder, Encoder, Kind, UrType, decode, encode};
+#![allow(
+    unused_crate_dependencies,
+    clippy::tests_outside_test_module,
+    reason = "integration test crates inherit package deps; not library API surface"
+)]
+
+use bcur::{Decoder, Encoder, Kind, UrType, decode, encode};
 
 #[test]
 fn single_part_wolf_uri_matches_ur_rs() {
     let golden = "ur:bytes/hdeymejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtgwdpfnsboxgwlbaawzuefywkdplrsrjynbvygabwjldapfcsdwkbrkch";
     let (kind, payload) = decode(golden).expect("decode golden");
-    assert_eq!(kind, Kind::SinglePart, "expected single-part UR");
+    assert_eq!(kind, Kind::SinglePart);
     assert_eq!(
         encode(&payload, &UrType::bytes()).expect("re-encode"),
-        golden,
-        "re-encode must be byte-identical"
+        golden
     );
 }
 
@@ -29,25 +36,22 @@ fn multipart_encoder_matches_ur_rs_first_and_last() {
     ];
     let mut decoder = Decoder::default();
     for uri in uris {
-        decoder.receive(uri).expect("receive simple part");
+        decoder.receive(uri).expect("receive");
     }
-    assert!(decoder.complete(), "nine simples should complete K=9");
-    let payload = decoder
-        .message()
-        .expect("message ok")
-        .expect("message present");
+    assert!(decoder.complete());
+    let payload = decoder.message().expect("ok").expect("present");
 
     let mut encoder = Encoder::bytes(&payload, 30).expect("encoder");
-    assert_eq!(encoder.fragment_count(), 9, "fragment count");
+    assert_eq!(encoder.fragment_count(), 9);
     assert_eq!(
-        encoder.next_part().expect("part 1"),
+        encoder.next_part().expect("1"),
         "ur:bytes/1-9/lpadascfadaxcywenbpljkhdcahkadaemejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtdkgslpgh"
     );
     for _ in 0..18 {
-        let _ = encoder.next_part().expect("middle part");
+        let _ = encoder.next_part().expect("middle");
     }
     assert_eq!(
-        encoder.next_part().expect("part 20"),
+        encoder.next_part().expect("20"),
         "ur:bytes/20-9/lpbbascfadaxcywenbpljkhdcayapmrleeleaxpasfrtrdkncffwjyjzgyetdmlewtkpktgllepfrltataztksmhkbot"
     );
 }
@@ -55,10 +59,10 @@ fn multipart_encoder_matches_ur_rs_first_and_last() {
 #[test]
 fn crypto_request_single_part_matches_ur_rs() {
     let mut e = minicbor::Encoder::new(Vec::new());
-    let uuid = hex::decode("020C223A86F7464693FC650EF3CAC047").expect("uuid hex");
+    let uuid = hex::decode("020C223A86F7464693FC650EF3CAC047").expect("uuid");
     let seed_digest =
         hex::decode("E824467CAFFEAF3BBC3E0CA095E660A9BAD80DDB6A919433A37161908B9A3986")
-            .expect("digest hex");
+            .expect("digest");
     e.map(2)
         .and_then(|enc| enc.u8(1))
         .and_then(|enc| enc.tag(minicbor::data::Tag::new(37)))
@@ -69,18 +73,15 @@ fn crypto_request_single_part_matches_ur_rs() {
         .and_then(|enc| enc.u8(1))
         .and_then(|enc| enc.tag(minicbor::data::Tag::new(600)))
         .and_then(|enc| enc.bytes(&seed_digest))
-        .expect("encode crypto-request CBOR");
+        .expect("cbor");
     let data = e.into_writer();
 
-    let encoded = encode(&data, &UrType::new("crypto-request").expect("type")).expect("encode UR");
+    let encoded = encode(&data, &UrType::new("crypto-request").expect("type")).expect("encode");
     assert_eq!(
         encoded,
         "ur:crypto-request/oeadtpdagdaobncpftlnylfgfgmuztihbawfsgrtflaotaadwkoyadtaaohdhdcxvsdkfgkepezepefrrffmbnnbmdvahnptrdtpbtuyimmemweootjshsmhlunyeslnameyhsdi"
     );
-    assert_eq!(
-        decode(&encoded).expect("decode UR"),
-        (Kind::SinglePart, data)
-    );
+    assert_eq!(decode(&encoded).expect("decode"), (Kind::SinglePart, data));
 }
 
 #[test]

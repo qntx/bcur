@@ -28,18 +28,12 @@ deny:
     cargo deny check
 
 # Clippy (CI-style, deny warnings)
-# Library package only for --all-features; benches/examples are separate packages.
 clippy:
-    cargo +nightly clippy -p bcur \
+    cargo +nightly clippy --workspace \
         --all-targets \
         --all-features \
         -- -D warnings
-    cargo +nightly clippy -p bcur-examples \
-        --all-targets \
-        -- -D warnings
-    cargo +nightly clippy -p bcur-bench \
-        --all-targets \
-        -- -D warnings
+
 # Clippy with auto-fix
 clippy-fix:
     cargo +nightly clippy --workspace \
@@ -62,8 +56,9 @@ fmt-check:
 doc:
     cargo +nightly doc --workspace --all-features --no-deps
 
-# Compile benches (no timing run)
+# Compile benches without running timings
 bench-check:
-    cargo bench -p bcur-bench --no-run
-# Full quality gate (no network except deny advisory DB if present)
+    cargo bench --workspace --all-features --no-run
+
+# Full quality gate
 quality: fmt-check clippy test check-no-std deny

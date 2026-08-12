@@ -1,10 +1,16 @@
-//! Checks aligned with published bc-ur wire examples (no source copy).
+//! Integration checks aligned with published bc-ur wire examples.
 
-use crate::{Decoder, Encoder, Kind, UrType, decode, encode, qr_string};
+#![allow(
+    unused_crate_dependencies,
+    clippy::tests_outside_test_module,
+    reason = "integration test crates inherit package deps; not library API surface"
+)]
+
+use bcur::{Decoder, Encoder, Kind, UrType, decode, encode, qr_string};
 
 #[test]
 fn bc_ur_array_123_single_part() {
-    let cbor = hex::decode("83010203").expect("cbor hex");
+    let cbor = hex::decode("83010203").expect("hex");
     let ur = encode(&cbor, &UrType::new("test").expect("type")).expect("encode");
     assert_eq!(ur, "ur:test/lsadaoaxjygonesw");
     let (kind, data) = decode(&ur).expect("decode");
@@ -14,13 +20,10 @@ fn bc_ur_array_123_single_part() {
 
 #[test]
 fn uppercase_qr_roundtrip_single_and_multi() {
-    let cbor = hex::decode("83010203").expect("cbor hex");
+    let cbor = hex::decode("83010203").expect("hex");
     let lower = encode(&cbor, &UrType::new("test").expect("type")).expect("encode");
     let upper = qr_string(&lower);
-    assert_eq!(
-        decode(&upper).expect("upper"),
-        decode(&lower).expect("lower")
-    );
+    assert_eq!(decode(&upper).expect("up"), decode(&lower).expect("lo"));
 
     let data = b"bc-ur multipath".repeat(8);
     let mut encoder = Encoder::bytes(&data, 6).expect("encoder");

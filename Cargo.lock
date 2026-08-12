@@ -44,26 +44,12 @@ version = "0.0.1"
 dependencies = [
  "bitcoin_hashes",
  "crc",
+ "criterion",
  "dcbor",
  "hex",
  "minicbor",
  "rand_xoshiro",
  "thiserror",
-]
-
-[[package]]
-name = "bcur-bench"
-version = "0.0.0"
-dependencies = [
- "bcur",
- "criterion",
-]
-
-[[package]]
-name = "bcur-examples"
-version = "0.0.0"
-dependencies = [
- "bcur",
 ]
 
 [[package]]

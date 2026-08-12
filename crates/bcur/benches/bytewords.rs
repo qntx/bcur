@@ -1,11 +1,9 @@
 //! Bytewords encode/decode throughput.
-//!
-//! `criterion_group!` / `criterion_main!` expand to items without rustdoc;
-//! that is a criterion limitation, not missing public API documentation.
 
 #![allow(
+    unused_crate_dependencies,
     missing_docs,
-    reason = "criterion macros expand to undocumented harness items"
+    reason = "bench crates inherit package deps; criterion macros emit undocumented items"
 )]
 
 use bcur::bytewords::{Style, decode, encode};

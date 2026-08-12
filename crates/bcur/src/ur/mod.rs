@@ -253,6 +253,8 @@ pub struct Decoder {
     max_uri_len: usize,
     expected_type: Option<UrType>,
     seen_type: Option<UrType>,
+    /// Fail-closed session flag for UR-layer `ResourceLimit` (e.g. `uri_len`).
+    poisoned: Option<&'static str>,
 }
 
 impl Default for Decoder {
@@ -276,6 +278,7 @@ impl Decoder {
             max_uri_len: limits.max_uri_len,
             expected_type: None,
             seen_type: None,
+            poisoned: None,
         }
     }
 
@@ -286,14 +289,32 @@ impl Decoder {
         self
     }
 
+    const fn poison(&mut self, reason: &'static str) -> Error {
+        self.poisoned = Some(reason);
+        Error::ResourceLimit(reason)
+    }
+
+    /// Map fountain/part CBOR resource limits into a poisoned UR session.
+    fn map_resource_limit(&mut self, err: Error) -> Error {
+        match err {
+            Error::ResourceLimit(reason) => self.poison(reason),
+            other => other,
+        }
+    }
+
     /// Receives one multi-part UR string.
     ///
     /// # Errors
     ///
     /// Returns parse, type, index, bytewords, CBOR, or fountain errors.
+    /// Any [`Error::ResourceLimit`] poisons the session (fail-closed).
     pub fn receive(&mut self, value: &str) -> Result<()> {
+        if let Some(reason) = self.poisoned {
+            return Err(Error::ResourceLimit(reason));
+        }
+
         if value.len() > self.max_uri_len {
-            return Err(Error::ResourceLimit("uri_len"));
+            return Err(self.poison("uri_len"));
         }
 
         let parsed = parse(value)?;
@@ -325,12 +346,15 @@ impl Decoder {
         let part = fountain::Part::from_cbor_with_max(
             decoded.as_slice(),
             self.fountain.max_fragment_data_length(),
-        )?;
+        )
+        .map_err(|e| self.map_resource_limit(e))?;
         let (idx, idx_total) = parsed.indices.ok_or(Error::InvalidIndices)?;
         if part.sequence() != idx || part.sequence_count() != idx_total {
             return Err(Error::InvalidIndices);
         }
-        self.fountain.receive(part)?;
+        self.fountain
+            .receive(part)
+            .map_err(|e| self.map_resource_limit(e))?;
         Ok(())
     }
 
@@ -344,8 +368,11 @@ impl Decoder {
     ///
     /// # Errors
     ///
-    /// Propagates fountain message errors.
+    /// Propagates fountain message errors. Resource-limit sessions stay fail-closed.
     pub fn message(&self) -> Result<Option<Vec<u8>>> {
+        if let Some(reason) = self.poisoned {
+            return Err(Error::ResourceLimit(reason));
+        }
         self.fountain.message()
     }
 
@@ -361,10 +388,10 @@ impl Decoder {
         self.fountain.fragment_count()
     }
 
-    /// Whether the underlying fountain decoder is poisoned.
+    /// Whether this multi-part session is poisoned (UR or fountain resource limit).
     #[must_use]
     pub const fn is_poisoned(&self) -> bool {
-        self.fountain.is_poisoned()
+        self.poisoned.is_some() || self.fountain.is_poisoned()
     }
 }
 
@@ -399,18 +426,76 @@ mod tests {
 
     #[test]
     fn test_ur_encoder() {
+        // Full 20-URI table from ur-rs 0.5 `test_ur_encoder` (MIT).
         let ur = make_message_ur(256, "Wolf");
         let mut encoder = Encoder::bytes(&ur, 30).unwrap();
         let expected = [
             "ur:bytes/1-9/lpadascfadaxcywenbpljkhdcahkadaemejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtdkgslpgh",
             "ur:bytes/2-9/lpaoascfadaxcywenbpljkhdcagwdpfnsboxgwlbaawzuefywkdplrsrjynbvygabwjldapfcsgmghhkhstlrdcxaefz",
             "ur:bytes/3-9/lpaxascfadaxcywenbpljkhdcahelbknlkuejnbadmssfhfrdpsbiegecpasvssovlgeykssjykklronvsjksopdzmol",
+            "ur:bytes/4-9/lpaaascfadaxcywenbpljkhdcasotkhemthydawydtaxneurlkosgwcekonertkbrlwmplssjtammdplolsbrdzcrtas",
+            "ur:bytes/5-9/lpahascfadaxcywenbpljkhdcatbbdfmssrkzmcwnezelennjpfzbgmuktrhtejscktelgfpdlrkfyfwdajldejokbwf",
+            "ur:bytes/6-9/lpamascfadaxcywenbpljkhdcackjlhkhybssklbwefectpfnbbectrljectpavyrolkzczcpkmwidmwoxkilghdsowp",
+            "ur:bytes/7-9/lpatascfadaxcywenbpljkhdcavszmwnjkwtclrtvaynhpahrtoxmwvwatmedibkaegdosftvandiodagdhthtrlnnhy",
+            "ur:bytes/8-9/lpayascfadaxcywenbpljkhdcadmsponkkbbhgsoltjntegepmttmoonftnbuoiyrehfrtsabzsttorodklubbuyaetk",
+            "ur:bytes/9-9/lpasascfadaxcywenbpljkhdcajskecpmdckihdyhphfotjojtfmlnwmadspaxrkytbztpbauotbgtgtaeaevtgavtny",
+            "ur:bytes/10-9/lpbkascfadaxcywenbpljkhdcahkadaemejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtwdkiplzs",
+            "ur:bytes/11-9/lpbdascfadaxcywenbpljkhdcahelbknlkuejnbadmssfhfrdpsbiegecpasvssovlgeykssjykklronvsjkvetiiapk",
+            "ur:bytes/12-9/lpbnascfadaxcywenbpljkhdcarllaluzmdmgstospeyiefmwejlwtpedamktksrvlcygmzemovovllarodtmtbnptrs",
+            "ur:bytes/13-9/lpbtascfadaxcywenbpljkhdcamtkgtpknghchchyketwsvwgwfdhpgmgtylctotzopdrpayoschcmhplffziachrfgd",
+            "ur:bytes/14-9/lpbaascfadaxcywenbpljkhdcapazewnvonnvdnsbyleynwtnsjkjndeoldydkbkdslgjkbbkortbelomueekgvstegt",
+            "ur:bytes/15-9/lpbsascfadaxcywenbpljkhdcaynmhpddpzmversbdqdfyrehnqzlugmjzmnmtwmrouohtstgsbsahpawkditkckynwt",
+            "ur:bytes/16-9/lpbeascfadaxcywenbpljkhdcawygekobamwtlihsnpalnsghenskkiynthdzotsimtojetprsttmukirlrsbtamjtpd",
+            "ur:bytes/17-9/lpbyascfadaxcywenbpljkhdcamklgftaxykpewyrtqzhydntpnytyisincxmhtbceaykolduortotiaiaiafhiaoyce",
+            "ur:bytes/18-9/lpbgascfadaxcywenbpljkhdcahkadaemejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtntwkbkwy",
+            "ur:bytes/19-9/lpbwascfadaxcywenbpljkhdcadekicpaajootjzpsdrbalpeywllbdsnbinaerkurspbncxgslgftvtsrjtksplcpeo",
+            "ur:bytes/20-9/lpbbascfadaxcywenbpljkhdcayapmrleeleaxpasfrtrdkncffwjyjzgyetdmlewtkpktgllepfrltataztksmhkbot",
         ];
         assert_eq!(encoder.fragment_count(), 9);
         for (index, e) in expected.into_iter().enumerate() {
             assert_eq!(encoder.current_index() as usize, index);
             assert_eq!(encoder.next_part().unwrap(), e);
         }
+    }
+
+    #[test]
+    fn test_ur_encoder_decoder_bc_crypto_request() {
+        // ur-rs / Blockchain Commons crypto-request seed vector.
+        fn crypto_seed() -> Vec<u8> {
+            let mut e = minicbor::Encoder::new(Vec::new());
+            let uuid = hex::decode("020C223A86F7464693FC650EF3CAC047").unwrap();
+            let seed_digest =
+                hex::decode("E824467CAFFEAF3BBC3E0CA095E660A9BAD80DDB6A919433A37161908B9A3986")
+                    .unwrap();
+            e.map(2)
+                .unwrap()
+                .u8(1)
+                .unwrap()
+                .tag(minicbor::data::Tag::new(37))
+                .unwrap()
+                .bytes(&uuid)
+                .unwrap()
+                .u8(2)
+                .unwrap()
+                .tag(minicbor::data::Tag::new(500))
+                .unwrap()
+                .map(1)
+                .unwrap()
+                .u8(1)
+                .unwrap()
+                .tag(minicbor::data::Tag::new(600))
+                .unwrap()
+                .bytes(&seed_digest)
+                .unwrap();
+            e.into_writer()
+        }
+
+        let data = crypto_seed();
+        let encoded = encode(&data, &UrType::new("crypto-request").unwrap()).unwrap();
+        let expected = "ur:crypto-request/oeadtpdagdaobncpftlnylfgfgmuztihbawfsgrtflaotaadwkoyadtaaohdhdcxvsdkfgkepezepefrrffmbnnbmdvahnptrdtpbtuyimmemweootjshsmhlunyeslnameyhsdi";
+        assert_eq!(encoded, expected);
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!((Kind::SinglePart, data), decoded);
     }
 
     #[test]
@@ -575,5 +660,57 @@ mod tests {
         let parsed = parse_normalized("ur:bytes/IEHSJYHSPMWFWFIA").unwrap();
         assert_eq!(parsed.body, "iehsjyhspmwfwfia");
         assert_eq!(parsed.ur_type.as_str(), "bytes");
+    }
+
+    #[test]
+    fn test_uri_len_resource_limit_poisons() {
+        let data = b"Ten chars!".repeat(5);
+        let mut enc = Encoder::bytes(&data, 5).unwrap();
+        let part = enc.next_part().unwrap();
+
+        let limits = DecoderLimits {
+            max_uri_len: 8,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = Decoder::with_limits(limits);
+        assert!(matches!(
+            decoder.receive(&part),
+            Err(Error::ResourceLimit("uri_len"))
+        ));
+        assert!(decoder.is_poisoned());
+        assert!(matches!(
+            decoder.receive(&part),
+            Err(Error::ResourceLimit("uri_len"))
+        ));
+        assert!(matches!(
+            decoder.message(),
+            Err(Error::ResourceLimit("uri_len"))
+        ));
+    }
+
+    #[test]
+    fn test_decoder_progress_accessors() {
+        let ur = make_message_ur(256, "Wolf");
+        let mut encoder = Encoder::bytes(&ur, 30).unwrap();
+        let mut decoder = Decoder::default();
+        assert_eq!(decoder.resolved_fragment_count(), None);
+        assert_eq!(decoder.fragment_count(), 0);
+
+        decoder.receive(&encoder.next_part().unwrap()).unwrap();
+        assert_eq!(decoder.resolved_fragment_count(), Some(1));
+        assert_eq!(decoder.fragment_count(), encoder.fragment_count() as usize);
+
+        let mut prev = 1;
+        while !decoder.complete() {
+            decoder.receive(&encoder.next_part().unwrap()).unwrap();
+            let now = decoder.resolved_fragment_count().unwrap();
+            assert!(now >= prev);
+            assert!(now <= decoder.fragment_count());
+            prev = now;
+        }
+        assert_eq!(
+            decoder.resolved_fragment_count(),
+            Some(decoder.fragment_count())
+        );
     }
 }

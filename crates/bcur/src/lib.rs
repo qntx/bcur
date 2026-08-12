@@ -48,3 +48,7 @@ pub use ur::{
 
 #[cfg(feature = "dcbor")]
 pub mod typed;
+
+// Dev-only tools are linked into test/bench targets; keep the lib lint clean.
+#[cfg(test)]
+use criterion as _;

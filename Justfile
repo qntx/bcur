@@ -56,5 +56,9 @@ fmt-check:
 doc:
     cargo +nightly doc --workspace --all-features --no-deps
 
+# Compile benches (no timing run)
+bench-check:
+    cargo bench --workspace --all-features --no-run
+
 # Full quality gate (no network except deny advisory DB if present)
 quality: fmt-check clippy test check-no-std deny

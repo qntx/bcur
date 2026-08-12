@@ -129,7 +129,11 @@ pub fn parse(uri: &str) -> Result<ParsedUr> {
     parse_normalized(&lowered)
 }
 
-/// Parses an already-lowercase UR without re-allocating a case-fold buffer.
+/// Parses a UR that is already lowercase (or folds the body to keep the contract).
+///
+/// Prefer [`parse`] for untrusted QR strings. This entry point avoids a full-URI
+/// allocation when the caller has already case-folded, but still lowercases the
+/// body so [`ParsedUr::body`] is always lowercase.
 ///
 /// # Errors
 ///
@@ -144,7 +148,7 @@ pub fn parse_normalized(uri: &str) -> Result<ParsedUr> {
             ur_type,
             kind: Kind::SinglePart,
             indices: None,
-            body: String::from(rest),
+            body: rest.to_ascii_lowercase(),
         }),
         Some((indices, body)) => {
             let indices = decode_indices(indices)?;
@@ -152,7 +156,7 @@ pub fn parse_normalized(uri: &str) -> Result<ParsedUr> {
                 ur_type,
                 kind: Kind::MultiPart,
                 indices: Some(indices),
-                body: String::from(body),
+                body: body.to_ascii_lowercase(),
             })
         }
     }
@@ -564,5 +568,12 @@ mod tests {
         let (kind, payload) = decode(&ur).unwrap();
         assert_eq!(kind, Kind::SinglePart);
         assert!(payload.is_empty());
+    }
+
+    #[test]
+    fn test_parse_normalized_body_is_lowercase() {
+        let parsed = parse_normalized("ur:bytes/IEHSJYHSPMWFWFIA").unwrap();
+        assert_eq!(parsed.body, "iehsjyhspmwfwfia");
+        assert_eq!(parsed.ur_type.as_str(), "bytes");
     }
 }

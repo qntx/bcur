@@ -150,6 +150,9 @@ fn strip_checksum(mut data: Vec<u8>) -> Result<Vec<u8>> {
 }
 
 /// Canonicalizes a 2–4 letter token to the full 4-letter lowercase byteword.
+///
+/// Per BCR-2020-012, each word is uniquely identified by its first three or last
+/// three letters, so length-3 tokens are accepted when unambiguous.
 #[must_use]
 pub fn canonicalize_byteword(token: &str) -> Option<String> {
     if !token.is_ascii() {
@@ -162,12 +165,30 @@ pub fn canonicalize_byteword(token: &str) -> Option<String> {
             let byte = encoded_byte(&lower, false)?;
             Some(String::from(word_at(byte)))
         }
+        3 => canonicalize_three_letter(bytes),
         2 => {
             let byte = encoded_byte(&lower, true)?;
             Some(String::from(word_at(byte)))
         }
         _ => None,
     }
+}
+
+fn canonicalize_three_letter(bytes: &[u8]) -> Option<String> {
+    let mut found: Option<&'static str> = None;
+    for word in &WORDS {
+        let w = word.as_bytes();
+        let first3 = w.get(..3) == Some(bytes);
+        let last3 = w.get(1..4) == Some(bytes);
+        if !(first3 || last3) {
+            continue;
+        }
+        if found.is_some() {
+            return None;
+        }
+        found = Some(*word);
+    }
+    found.map(String::from)
 }
 
 #[cfg(test)]
@@ -284,6 +305,8 @@ mod tests {
         assert_eq!(encode_raw(&[0], Style::Minimal), "ae");
         assert_eq!(canonicalize_byteword("ABLE"), Some(String::from("able")));
         assert_eq!(canonicalize_byteword("ae"), Some(String::from("able")));
+        assert_eq!(canonicalize_byteword("abl"), Some(String::from("able")));
+        assert_eq!(canonicalize_byteword("ble"), Some(String::from("able")));
         assert_eq!(canonicalize_byteword("nope"), None);
         assert_eq!(canonicalize_byteword("a"), None);
     }

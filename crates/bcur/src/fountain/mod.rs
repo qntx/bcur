@@ -342,7 +342,9 @@ impl Decoder {
             self.queue.push((idx, part));
             return Ok(());
         }
-        if self.buffer.len() >= self.limits.max_buffer_parts {
+        // Replacing an existing index-set does not grow the map; only count new keys.
+        if !self.buffer.contains_key(&indexes) && self.buffer.len() >= self.limits.max_buffer_parts
+        {
             return Err(self.poison("buffer_parts"));
         }
         self.buffer.insert(indexes, part);
@@ -826,5 +828,26 @@ mod tests {
             Encoder::new(b"x", 0),
             Err(Error::InvalidFragmentLen)
         ));
+    }
+
+    #[test]
+    fn test_buffer_duplicate_at_capacity_does_not_poison() {
+        let limits = DecoderLimits {
+            max_buffer_parts: 1,
+            ..DecoderLimits::default()
+        };
+        let message = make_message("Wolf", 64);
+        let mut encoder = Encoder::new(&message, 8).unwrap();
+        let k = encoder.fragment_count();
+        let first_mixed = (0..k.saturating_mul(20))
+            .map(|_| encoder.next_part().unwrap())
+            .find(|p| !p.is_simple())
+            .expect("need at least one mixed part");
+
+        let mut decoder = Decoder::with_limits(limits);
+        decoder.receive(first_mixed.clone()).unwrap();
+        // Same index-set: ignored without growing the buffer or poisoning.
+        assert!(!decoder.receive(first_mixed).unwrap());
+        assert!(!decoder.is_poisoned());
     }
 }

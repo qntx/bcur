@@ -26,8 +26,53 @@ use crate::{Error, ResourceKind, Result};
 
 /// Hard limits for adversarial multi-part streams.
 ///
-/// Default numeric values are experimental before 1.0; hosts that need fixed
-/// budgets should use [`Decoder::with_limits`].
+/// Default integers are **experimental until 1.0**. They stay at the 0.2
+/// values unless fuzz or a CVE forces a tighten before freeze. Hosts that
+/// need a fixed or embedded budget must use [`Decoder::with_limits`].
+///
+/// These caps are a desktop fail-closed ceiling, not a QR-version table.
+///
+/// | Field | Default | Role |
+/// |-------|---------|------|
+/// | `max_message_length` | `1_048_576` (1 MiB) | Original payload cap |
+/// | `max_fragment_count` | `2_000` | `K` / `sequence_count` |
+/// | `max_fragment_data_length` | `8_192` | `part.data.len()` and `Part` CBOR bstr |
+/// | `max_buffer_parts` | `4_000` | Mixed-part XOR map |
+/// | `max_received_parts` | `8_000` | Unique index-set set |
+/// | `max_uri_len` | `8_192` | `ur::Decoder::receive` ASCII length |
+///
+/// CLI payloads are uppercase UR and fit QR alphanumeric mode. ISO/IEC 18004
+/// Table 7, version 40, alphanumeric Q capacity is 2420 characters.
+/// `max_uri_len` = 8192 is a string-API `DoS` bound, above any single QR
+/// (including alphanumeric L 4296).
+///
+/// At `--max-chars 400`, a part body is ~180 decoded bytes, so `K = 2000`
+/// admits ~360 KiB, below `max_message_length`. Both caps apply; the tighter
+/// one wins. [`Part::from_cbor`] / [`Part::from_cbor_with_max`] also apply
+/// `max_fragment_count` / `max_fragment_data_length` before the fountain
+/// decoder sees the part.
+///
+/// [`Self::worst_case_heap_bytes`] is a **cap-product ceiling excluding
+/// allocator/BTree overhead**, not a conservative RSS figure. Independent
+/// caps overestimate reachable payload heap (`K=2000` × 8 KiB is
+/// [`Error::InconsistentPart`] against `max_message_length=1 MiB`).
+/// `BTree`/allocator costs underestimate process RSS for a given cap tuple.
+///
+/// ```text
+/// decoded  = min(max_message_length + max_fragment_data_length,
+///                max_fragment_count * max_fragment_data_length)
+/// buffer   = max_buffer_parts * (max_fragment_data_length
+///            + max_fragment_count * size_of::<usize>())
+/// received = max_received_parts * max_fragment_count * size_of::<usize>()
+/// total    = decoded + buffer + received
+/// ```
+///
+/// All multiplies and adds saturate at [`usize::MAX`].
+///
+/// On 64-bit (`size_of::<usize>() == 8`) [`Default`] is **`225_824_768`
+/// (≈ 215 MiB)**. On 32-bit the same integers yield **`129_824_768`
+/// (≈ 124 MiB)**. An embedded target still must call
+/// [`Decoder::with_limits`] — 124 MiB is not an embedded budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecoderLimits {
     /// Max original message length in bytes.
@@ -54,6 +99,39 @@ impl Default for DecoderLimits {
             max_received_parts: 8_000,
             max_uri_len: 8_192,
         }
+    }
+}
+
+impl DecoderLimits {
+    /// Cap-product ceiling of the public caps, excluding allocator/`BTree`
+    /// overhead. Saturates at [`usize::MAX`].
+    ///
+    /// 64-bit [`Default`] is `225_824_768` (≈ 215 MiB). 32-bit [`Default`] is
+    /// `129_824_768` (≈ 124 MiB). This is not process RSS. `max_uri_len` is a
+    /// receive-length bound and is not included in the product.
+    #[must_use]
+    pub const fn worst_case_heap_bytes(&self) -> usize {
+        let usz = size_of::<usize>();
+        let decoded_a = self
+            .max_message_length
+            .saturating_add(self.max_fragment_data_length);
+        let decoded_b = self
+            .max_fragment_count
+            .saturating_mul(self.max_fragment_data_length);
+        let decoded = if decoded_a < decoded_b {
+            decoded_a
+        } else {
+            decoded_b
+        };
+        let per_buffer = self
+            .max_fragment_data_length
+            .saturating_add(self.max_fragment_count.saturating_mul(usz));
+        let buffer = self.max_buffer_parts.saturating_mul(per_buffer);
+        let received = self
+            .max_received_parts
+            .saturating_mul(self.max_fragment_count)
+            .saturating_mul(usz);
+        decoded.saturating_add(buffer).saturating_add(received)
     }
 }
 
@@ -630,6 +708,49 @@ fn xor(v1: &mut [u8], v2: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
     use crate::rng::test_utils::make_message;
+
+    #[test]
+    fn decoder_limits_default_budget_is_locked() {
+        let limits = DecoderLimits::default();
+        assert_eq!(limits.max_message_length, 1_048_576);
+        assert_eq!(limits.max_fragment_count, 2_000);
+        assert_eq!(limits.max_fragment_data_length, 8_192);
+        assert_eq!(limits.max_buffer_parts, 4_000);
+        assert_eq!(limits.max_received_parts, 8_000);
+        assert_eq!(limits.max_uri_len, 8_192);
+
+        let usz = size_of::<usize>();
+        let decoded_a = limits
+            .max_message_length
+            .saturating_add(limits.max_fragment_data_length);
+        let decoded_b = limits
+            .max_fragment_count
+            .saturating_mul(limits.max_fragment_data_length);
+        let decoded = decoded_a.min(decoded_b);
+        let per_buffer = limits
+            .max_fragment_data_length
+            .saturating_add(limits.max_fragment_count.saturating_mul(usz));
+        let buffer = limits.max_buffer_parts.saturating_mul(per_buffer);
+        let received = limits
+            .max_received_parts
+            .saturating_mul(limits.max_fragment_count)
+            .saturating_mul(usz);
+        let expected = decoded.saturating_add(buffer).saturating_add(received);
+        assert_eq!(limits.worst_case_heap_bytes(), expected);
+
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(limits.worst_case_heap_bytes(), 225_824_768);
+
+        let overflow = DecoderLimits {
+            max_message_length: usize::MAX,
+            max_fragment_count: usize::MAX,
+            max_fragment_data_length: usize::MAX,
+            max_buffer_parts: usize::MAX,
+            max_received_parts: usize::MAX,
+            max_uri_len: usize::MAX,
+        };
+        assert_eq!(overflow.worst_case_heap_bytes(), usize::MAX);
+    }
 
     #[test]
     fn oversized_padding_is_inconsistent() {

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `DecoderLimits::worst_case_heap_bytes`: saturating cap-product ceiling of
+  the public caps, excluding allocator/BTree overhead. 64-bit `Default` is
+  `225_824_768` (≈ 215 MiB). Default integers are unchanged and remain
+  experimental until 1.0.
+
 ### Changed
 
 - Lockfile: `bitcoin_hashes` 1.2.0, `minicbor` 2.3.0, `thiserror` 2.0.20,

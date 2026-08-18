@@ -9,7 +9,7 @@
 
 //! Adversarial multi-part decoder session behavior (public API).
 
-use bcur::{Decoder, DecoderLimits, Encoder, Error, UrType};
+use bcur::{Decoder, DecoderLimits, Encoder, Error, ResourceKind, UrType};
 
 #[test]
 fn uri_len_limit_poisons_session() {
@@ -23,16 +23,16 @@ fn uri_len_limit_poisons_session() {
     });
     assert!(matches!(
         decoder.receive(&part),
-        Err(Error::ResourceLimit("uri_len"))
+        Err(Error::ResourceLimit(ResourceKind::UriLen))
     ));
     assert!(decoder.is_poisoned());
     assert!(matches!(
         decoder.receive(&part),
-        Err(Error::ResourceLimit("uri_len"))
+        Err(Error::ResourceLimit(ResourceKind::UriLen))
     ));
     assert!(matches!(
         decoder.message(),
-        Err(Error::ResourceLimit("uri_len"))
+        Err(Error::ResourceLimit(ResourceKind::UriLen))
     ));
 }
 
@@ -49,7 +49,7 @@ fn fragment_count_limit_poisons() {
     let part = enc.next_part().unwrap();
     assert!(matches!(
         decoder.receive(&part),
-        Err(Error::ResourceLimit("fragment_count"))
+        Err(Error::ResourceLimit(ResourceKind::FragmentCount))
     ));
     assert!(decoder.is_poisoned());
 }
@@ -64,7 +64,7 @@ fn message_length_limit_poisons() {
     });
     assert!(matches!(
         decoder.receive(&enc.next_part().unwrap()),
-        Err(Error::ResourceLimit("message_length"))
+        Err(Error::ResourceLimit(ResourceKind::MessageLength))
     ));
     assert!(decoder.is_poisoned());
 }

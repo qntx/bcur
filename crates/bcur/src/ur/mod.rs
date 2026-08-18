@@ -16,8 +16,9 @@
 use alloc::{string::String, vec::Vec};
 
 use crate::bytewords::{self, Style};
+use crate::error::Poison;
 use crate::fountain::{self, DecoderLimits};
-use crate::{Error, Result};
+use crate::{Error, ResourceKind, Result};
 
 /// Validated UR type token (non-empty, stored lowercase).
 ///
@@ -292,8 +293,8 @@ pub struct Decoder {
     expected_type: Option<UrType>,
     seen_type: Option<UrType>,
     single: Option<Vec<u8>>,
-    /// Fail-closed session flag (`ResourceLimit` reason or `"decoder_state"`).
-    poisoned: Option<&'static str>,
+    /// Fail-closed session flag (resource limit or decoder-state).
+    poisoned: Option<Poison>,
 }
 
 impl Default for Decoder {
@@ -330,27 +331,20 @@ impl Decoder {
         self
     }
 
-    const fn poison(&mut self, reason: &'static str) -> Error {
-        self.poisoned = Some(reason);
-        Error::ResourceLimit(reason)
+    const fn poison(&mut self, kind: ResourceKind) -> Error {
+        let poison = Poison::Limit(kind);
+        self.poisoned = Some(poison);
+        poison.to_error()
     }
 
     fn escalate(&mut self, err: Error) -> Error {
         match err {
-            Error::ResourceLimit(reason) => self.poison(reason),
+            Error::ResourceLimit(kind) => self.poison(kind),
             Error::DecoderState => {
-                self.poisoned = Some("decoder_state");
-                Error::DecoderState
+                self.poisoned = Some(Poison::DecoderState);
+                Poison::DecoderState.to_error()
             }
             other => other,
-        }
-    }
-
-    fn poison_error(reason: &'static str) -> Error {
-        if reason == "decoder_state" {
-            Error::DecoderState
-        } else {
-            Error::ResourceLimit(reason)
         }
     }
 
@@ -386,12 +380,12 @@ impl Decoder {
     /// [`Error::ResourceLimit`] and unrecoverable [`Error::DecoderState`]
     /// poison the session (fail-closed).
     pub fn receive(&mut self, value: &str) -> Result<()> {
-        if let Some(reason) = self.poisoned {
-            return Err(Self::poison_error(reason));
+        if let Some(poison) = self.poisoned {
+            return Err(poison.to_error());
         }
 
         if value.len() > self.max_uri_len {
-            return Err(self.poison("uri_len"));
+            return Err(self.poison(ResourceKind::UriLen));
         }
 
         let parsed = parse(value)?;
@@ -411,7 +405,7 @@ impl Decoder {
         }
         let data = bytewords::decode(&parsed.body, Style::Minimal)?;
         if data.len() > self.max_message_length {
-            return Err(self.poison("message_length"));
+            return Err(self.poison(ResourceKind::MessageLength));
         }
         self.seen_type = Some(parsed.ur_type);
         self.single = Some(data);
@@ -458,8 +452,8 @@ impl Decoder {
     ///
     /// Propagates fountain message errors. Resource-limit sessions stay fail-closed.
     pub fn message(&self) -> Result<Option<Vec<u8>>> {
-        if let Some(reason) = self.poisoned {
-            return Err(Self::poison_error(reason));
+        if let Some(poison) = self.poisoned {
+            return Err(poison.to_error());
         }
         if let Some(ref data) = self.single {
             return Ok(Some(data.clone()));
@@ -487,7 +481,8 @@ impl Decoder {
         }
     }
 
-    /// Whether this multi-part session is poisoned (UR or fountain resource limit).
+    /// Whether this session is fail-closed (`ResourceLimit` or `DecoderState`,
+    /// including the inner fountain decoder).
     #[must_use]
     pub const fn is_poisoned(&self) -> bool {
         self.poisoned.is_some() || self.fountain.is_poisoned()
@@ -766,7 +761,7 @@ mod tests {
         let mut short = Decoder::with_limits(limits);
         assert!(matches!(
             short.receive(&part),
-            Err(Error::ResourceLimit("uri_len"))
+            Err(Error::ResourceLimit(ResourceKind::UriLen))
         ));
     }
 
@@ -812,16 +807,16 @@ mod tests {
         let mut decoder = Decoder::with_limits(limits);
         assert!(matches!(
             decoder.receive(&part),
-            Err(Error::ResourceLimit("uri_len"))
+            Err(Error::ResourceLimit(ResourceKind::UriLen))
         ));
         assert!(decoder.is_poisoned());
         assert!(matches!(
             decoder.receive(&part),
-            Err(Error::ResourceLimit("uri_len"))
+            Err(Error::ResourceLimit(ResourceKind::UriLen))
         ));
         assert!(matches!(
             decoder.message(),
-            Err(Error::ResourceLimit("uri_len"))
+            Err(Error::ResourceLimit(ResourceKind::UriLen))
         ));
     }
 

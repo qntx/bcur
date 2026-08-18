@@ -6,7 +6,7 @@
 use alloc::vec::Vec;
 
 use super::Part;
-use crate::{Error, Result};
+use crate::{Error, ResourceKind, Result};
 
 /// Encodes a part to deterministic CBOR bytes.
 #[must_use]
@@ -48,7 +48,7 @@ pub(crate) fn decode_part(
     }
     let count = usize::try_from(sequence_count).unwrap_or(usize::MAX);
     if count > max_fragment_count {
-        return Err(Error::ResourceLimit("fragment_count"));
+        return Err(Error::ResourceLimit(ResourceKind::FragmentCount));
     }
     Ok(Part::from_fields(
         sequence,
@@ -203,7 +203,7 @@ fn decode_bstr(bytes: &[u8], i: &mut usize, max_data_len: usize) -> Result<Vec<u
         _ => return Err(Error::InvalidPartCbor),
     };
     if len > max_data_len {
-        return Err(Error::ResourceLimit("fragment_data"));
+        return Err(Error::ResourceLimit(ResourceKind::FragmentData));
     }
     let end = i.checked_add(len).ok_or(Error::InvalidPartCbor)?;
     let slice = bytes.get(*i..end).ok_or(Error::InvalidPartCbor)?;
@@ -279,7 +279,7 @@ mod tests {
         let cbor = encode_part(&part);
         assert!(matches!(
             decode_part(&cbor, 16, 2000),
-            Err(Error::ResourceLimit("fragment_data"))
+            Err(Error::ResourceLimit(ResourceKind::FragmentData))
         ));
     }
 
@@ -289,7 +289,7 @@ mod tests {
         let cbor = encode_part(&part);
         assert!(matches!(
             decode_part(&cbor, 8192, 8),
-            Err(Error::ResourceLimit("fragment_count"))
+            Err(Error::ResourceLimit(ResourceKind::FragmentCount))
         ));
     }
 }

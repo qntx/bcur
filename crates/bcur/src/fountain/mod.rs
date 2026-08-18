@@ -20,8 +20,9 @@ use alloc::{
 };
 
 use crate::crc32;
+use crate::error::Poison;
 use crate::rng::Xoshiro256;
-use crate::{Error, Result};
+use crate::{Error, ResourceKind, Result};
 
 /// Hard limits for adversarial multi-part streams.
 ///
@@ -80,12 +81,12 @@ impl Encoder {
         if max_fragment_length == 0 {
             return Err(Error::InvalidFragmentLen);
         }
-        let message_length =
-            u32::try_from(message.len()).map_err(|_| Error::ResourceLimit("message_length"))?;
+        let message_length = u32::try_from(message.len())
+            .map_err(|_| Error::ResourceLimit(ResourceKind::MessageLength))?;
         let frag_len = fragment_length(message.len(), max_fragment_length);
         let fragments = partition(message.to_vec(), frag_len);
-        let sequence_count =
-            u32::try_from(fragments.len()).map_err(|_| Error::ResourceLimit("fragment_count"))?;
+        let sequence_count = u32::try_from(fragments.len())
+            .map_err(|_| Error::ResourceLimit(ResourceKind::FragmentCount))?;
         Ok(Self {
             parts: fragments,
             sequence_count,
@@ -117,10 +118,11 @@ impl Encoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ResourceLimit`] if the sequence would exceed `u32::MAX`.
+    /// Returns [`Error::ResourceLimit`] ([`ResourceKind::Sequence`]) if the
+    /// sequence would exceed `u32::MAX`.
     pub fn next_part(&mut self) -> Result<Part> {
         if self.current_sequence == u32::MAX {
-            return Err(Error::ResourceLimit("sequence"));
+            return Err(Error::ResourceLimit(ResourceKind::Sequence));
         }
         self.current_sequence += 1;
         let indexes = choose_fragments(
@@ -156,7 +158,7 @@ pub struct Decoder {
     checksum: u32,
     fragment_length: usize,
     limits: DecoderLimits,
-    poisoned: Option<&'static str>,
+    poisoned: Option<Poison>,
 }
 
 impl Default for Decoder {
@@ -189,33 +191,27 @@ impl Decoder {
         }
     }
 
-    /// Whether a previous `ResourceLimit` poisoned this decoder.
+    /// Whether a previous [`Error::ResourceLimit`] or [`Error::DecoderState`]
+    /// poisoned this decoder.
     #[must_use]
     pub const fn is_poisoned(&self) -> bool {
         self.poisoned.is_some()
     }
 
-    const fn poison(&mut self, reason: &'static str) -> Error {
-        self.poisoned = Some(reason);
-        Error::ResourceLimit(reason)
+    const fn poison(&mut self, kind: ResourceKind) -> Error {
+        let poison = Poison::Limit(kind);
+        self.poisoned = Some(poison);
+        poison.to_error()
     }
 
     fn escalate(&mut self, err: Error) -> Error {
         match err {
-            Error::ResourceLimit(reason) => self.poison(reason),
+            Error::ResourceLimit(kind) => self.poison(kind),
             Error::DecoderState => {
-                self.poisoned = Some("decoder_state");
-                Error::DecoderState
+                self.poisoned = Some(Poison::DecoderState);
+                Poison::DecoderState.to_error()
             }
             other => other,
-        }
-    }
-
-    fn poison_error(reason: &'static str) -> Error {
-        if reason == "decoder_state" {
-            Error::DecoderState
-        } else {
-            Error::ResourceLimit(reason)
         }
     }
 
@@ -225,8 +221,8 @@ impl Decoder {
     ///
     /// Returns an error if the part is invalid, inconsistent, or exceeds limits.
     pub fn receive(&mut self, part: Part) -> Result<bool> {
-        if let Some(reason) = self.poisoned {
-            return Err(Self::poison_error(reason));
+        if let Some(poison) = self.poisoned {
+            return Err(poison.to_error());
         }
         if self.complete() {
             return Ok(false);
@@ -239,22 +235,22 @@ impl Decoder {
             return Err(Error::InvalidSequence);
         }
         if part.data.len() > self.limits.max_fragment_data_length {
-            return Err(self.poison("fragment_data"));
+            return Err(self.poison(ResourceKind::FragmentData));
         }
 
         if self.received.is_empty() {
             let sc = part.sequence_count as usize;
             let ml = part.message_length as usize;
             if sc > self.limits.max_fragment_count {
-                return Err(self.poison("fragment_count"));
+                return Err(self.poison(ResourceKind::FragmentCount));
             }
             if ml > self.limits.max_message_length {
-                return Err(self.poison("message_length"));
+                return Err(self.poison(ResourceKind::MessageLength));
             }
             let frag_len = part.data.len();
             let product = frag_len
                 .checked_mul(sc)
-                .ok_or_else(|| self.poison("message_length"))?;
+                .ok_or_else(|| self.poison(ResourceKind::MessageLength))?;
             // Partition pads with at most `frag_len - 1` bytes.
             if product < ml || product - ml >= frag_len {
                 return Err(Error::InconsistentPart);
@@ -272,7 +268,7 @@ impl Decoder {
             return Ok(false);
         }
         if self.received.len() >= self.limits.max_received_parts {
-            return Err(self.poison("received_parts"));
+            return Err(self.poison(ResourceKind::ReceivedParts));
         }
         self.received.insert(indexes);
         if part.is_simple() {
@@ -365,7 +361,7 @@ impl Decoder {
         // Replacing an existing index-set does not grow the map; only count new keys.
         if !self.buffer.contains_key(&indexes) && self.buffer.len() >= self.limits.max_buffer_parts
         {
-            return Err(self.poison("buffer_parts"));
+            return Err(self.poison(ResourceKind::BufferParts));
         }
         self.buffer.insert(indexes, part);
         Ok(())
@@ -429,8 +425,8 @@ impl Decoder {
     ///
     /// Returns padding or checksum errors if the joined payload is invalid.
     pub fn message(&self) -> Result<Option<Vec<u8>>> {
-        if let Some(reason) = self.poisoned {
-            return Err(Self::poison_error(reason));
+        if let Some(poison) = self.poisoned {
+            return Err(poison.to_error());
         }
         if !self.complete() {
             return Ok(None);
@@ -898,13 +894,13 @@ mod tests {
         assert!(encoder.fragment_count() > 1);
         assert!(matches!(
             decoder.receive(encoder.next_part().unwrap()),
-            Err(Error::ResourceLimit("fragment_count"))
+            Err(Error::ResourceLimit(ResourceKind::FragmentCount))
         ));
         assert!(decoder.is_poisoned());
         // Fail-closed: subsequent receives keep failing.
         assert!(matches!(
             decoder.receive(encoder.next_part().unwrap()),
-            Err(Error::ResourceLimit("fragment_count"))
+            Err(Error::ResourceLimit(ResourceKind::FragmentCount))
         ));
     }
 
@@ -960,7 +956,7 @@ mod tests {
         let mut encoder = Encoder::new(&message, 8).unwrap();
         assert!(matches!(
             decoder.receive(encoder.next_part().unwrap()),
-            Err(Error::ResourceLimit("message_length"))
+            Err(Error::ResourceLimit(ResourceKind::MessageLength))
         ));
         assert!(decoder.is_poisoned());
     }

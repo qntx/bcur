@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `zerocopy` 0.8.56, `futures-*` 0.3.34). `Cargo.toml` ranges were already
   at current majors; no incompatible upgrades exist.
 
+### Notes
+
+- Docs: restore `THIRD_PARTY.md` and the L0–L3 vs L4 dCBOR contract
+  (`docs/design/layers.md`). No behavior change.
+
 ## [0.2.0] — 2026-08-18
 
 Optional typed dCBOR layer (`feature = "dcbor"`, implies `std`).

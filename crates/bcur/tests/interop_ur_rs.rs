@@ -9,7 +9,8 @@
 
 //! Integration interop checks against ur-rs 0.5 public vectors.
 //!
-//! Vector tables originate from ur-rs (MIT); see repository `THIRD_PARTY.md`.
+//! Vector tables originate from ur-rs 0.5.x (MIT); see repository-root
+//! `THIRD_PARTY.md` (goldens only; no `URKit` / `bc-ur` source).
 
 use bcur::{Decoder, Encoder, Kind, UrType, decode, encode};
 

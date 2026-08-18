@@ -14,6 +14,27 @@
 //! Core transport always requires `alloc` and supports `no_std` via
 //! `--no-default-features`.
 //!
+//! # Layering
+//!
+//! **L0–L3 (always built).** A UR type token is a validated label
+//! (`[a-z0-9-]+` after ASCII lowercasing). The body is raw bytes plus
+//! bytewords CRC. [`ur::encode`] / [`ur::Encoder`] do **not** parse or
+//! require CBOR. [`UrType::bytes`] and [`Encoder::bytes`] exist so tests
+//! and generic hosts can move untyped payloads. This is an intentional
+//! split, not an accident, and it matches ur-rs.
+//!
+//! **BCR-2020-005** says a UR *message* MUST be dCBOR and that type
+//! `bytes` MUST NOT be used except for testing. That MUST is enforced on
+//! **L4** (`feature = "dcbor"`): [`typed::Ur::from_ur_string`] and
+//! [`typed::MultipartDecoder::message`] reject non-dCBOR ([`Error::Cbor`]).
+//! L4 also uses the first registered `dcbor` tag **name** as the type
+//! token and strips the tag from the UR body (005 "top-level UR is
+//! untagged").
+//!
+//! **This crate will not** grow a Blockchain Commons type registry,
+//! Envelope, or PSBT module to "satisfy 005." Application types belong
+//! in a consumer crate that implements [`UrEncodable`] / [`UrDecodable`].
+//!
 //! # Example
 //!
 //! ```

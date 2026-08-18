@@ -262,6 +262,8 @@ pub struct Encoder {
     fountain: fountain::Encoder,
     ur_type: UrType,
     message: Vec<u8>,
+    /// 0 before first emit; 1 after. Only used when `K == 1`.
+    single_emitted: u32,
 }
 
 impl Encoder {
@@ -287,6 +289,7 @@ impl Encoder {
             fountain: fountain::Encoder::new(message, max_fragment_length)?,
             ur_type: ur_type.clone(),
             message: message.to_vec(),
+            single_emitted: 0,
         })
     }
 
@@ -298,17 +301,20 @@ impl Encoder {
 
     /// Emits the next UR string.
     ///
-    /// Single-fragment messages use the single-part form. Larger messages use
-    /// fountain `ur:<type>/<seq>-<count>/<bytewords>`.
+    /// Single-fragment messages (`K == 1`) use the single-part form and re-emit
+    /// the same `ur:<type>/<bytewords>` string on every call. The fountain
+    /// encoder is not advanced. Larger messages use fountain
+    /// `ur:<type>/<seq>-<count>/<bytewords>`.
     ///
     /// # Errors
     ///
-    /// Returns sequence resource limits from the fountain encoder.
+    /// Multi-part only: sequence resource limits from the fountain encoder.
     pub fn next_part(&mut self) -> Result<String> {
-        let part = self.fountain.next_part()?;
         if self.is_single_part() {
+            self.single_emitted = 1;
             return Ok(encode(&self.message, &self.ur_type));
         }
+        let part = self.fountain.next_part()?;
         let body = bytewords::encode(&part.to_cbor(), Style::Minimal);
         Ok(alloc::format!(
             "ur:{}/{}/{body}",
@@ -318,9 +324,27 @@ impl Encoder {
     }
 
     /// Current emitted part count.
+    ///
+    /// Single-part: `0` before the first emit, then `1`. Multi-part: fountain
+    /// `seqNum`.
     #[must_use]
     pub const fn current_index(&self) -> u32 {
-        self.fountain.current_sequence()
+        if self.is_single_part() {
+            self.single_emitted
+        } else {
+            self.fountain.current_sequence()
+        }
+    }
+
+    /// Whether a single-part UR has been emitted, or every source fragment has
+    /// been emitted at least once.
+    #[must_use]
+    pub const fn complete(&self) -> bool {
+        if self.is_single_part() {
+            self.single_emitted == 1
+        } else {
+            self.fountain.complete()
+        }
     }
 
     /// Source fragment count `K`.
@@ -718,6 +742,41 @@ mod tests {
         let mut decoder = Decoder::default();
         decoder.receive(&part).unwrap();
         assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
+    }
+
+    #[test]
+    fn test_encoder_k1_next_part_is_idempotent() {
+        let data = b"hello";
+        let mut encoder = Encoder::bytes(data, 64).unwrap();
+        assert!(!encoder.complete());
+        assert_eq!(encoder.current_index(), 0);
+        let first = encoder.next_part().unwrap();
+        assert_eq!(first, encode(data, &UrType::bytes()));
+        assert_eq!(encoder.current_index(), 1);
+        assert!(encoder.complete());
+        let second = encoder.next_part().unwrap();
+        assert_eq!(second, first);
+        assert_eq!(encoder.current_index(), 1);
+        for _ in 0..10 {
+            assert_eq!(encoder.next_part().unwrap(), first);
+            assert_eq!(encoder.current_index(), 1);
+            assert!(encoder.complete());
+        }
+    }
+
+    #[test]
+    fn test_foreign_1_1_fountain_uri_decodes() {
+        let mut fountain = fountain::Encoder::new(b"hello", 64).unwrap();
+        let part = fountain.next_part().unwrap();
+        let body = bytewords::encode(&part.to_cbor(), Style::Minimal);
+        let uri = alloc::format!("ur:bytes/1-1/{body}");
+        let mut decoder = Decoder::default();
+        decoder.receive(&uri).unwrap();
+        assert!(decoder.complete());
+        assert_eq!(
+            decoder.message().unwrap().as_deref(),
+            Some(b"hello".as_slice())
+        );
     }
 
     #[test]

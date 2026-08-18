@@ -31,13 +31,13 @@ impl MultipartEncoder {
         })
     }
 
-    /// Next UR string: single-part when `K == 1`, otherwise
+    /// Next UR string: single-part when `K == 1` (idempotent), otherwise
     /// `ur:<type>/<seq>-<count>/<bytewords>`.
     ///
     /// # Errors
     ///
-    /// [`Error::ResourceLimit`] ([`crate::ResourceKind::Sequence`]) after
-    /// `u32::MAX` parts.
+    /// Multi-part: [`Error::ResourceLimit`] ([`crate::ResourceKind::Sequence`])
+    /// after `u32::MAX` parts. Single-part does not fail.
     pub fn next_part(&mut self) -> Result<String> {
         self.encoder.next_part()
     }
@@ -58,6 +58,13 @@ impl MultipartEncoder {
     #[must_use]
     pub const fn is_single_part(&self) -> bool {
         self.encoder.is_single_part()
+    }
+
+    /// Whether a single-part UR has been emitted, or every source fragment has
+    /// been emitted at least once.
+    #[must_use]
+    pub const fn complete(&self) -> bool {
+        self.encoder.complete()
     }
 }
 

@@ -1,0 +1,36 @@
+# Drift detection of quoted `ur:` literals from pinned URKit / bc-ur test files.
+# Not a BCR-2020-005 compliance check. Do not add this job to PR CI.
+name: Published UR string drift
+
+on:
+  schedule:
+    - cron: "40 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  URKIT_REPO: BlockchainCommons/URKit
+  URKIT_REF: "15.1.0"
+  URKIT_SHA: c0a447560768e2552cf85a586dea8cfc26162891
+  URKIT_UR_TESTS: Tests/URKitTests/URTests.swift
+  URKIT_FOUNTAIN_TESTS: Tests/URKitTests/FountainCodesTests.swift
+  BCUR_CPP_REPO: BlockchainCommons/bc-ur
+  BCUR_CPP_REF: 4479fb81b2350ae8bafa042a5572b9c64c2c32ca
+  BCUR_CPP_TESTS: test/test.cpp
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  published-string-drift:
+    name: quoted ur: literal drift (not 005 compliance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Extract quoted ur: literals at pins
+        run: scripts/extract_published_urs.sh | tee /tmp/published_now.txt
+      - name: Exact-set diff against published_from_refs.txt
+        run: >
+          diff -u crates/bcur/tests/vectors/published_from_refs.txt
+          /tmp/published_now.txt

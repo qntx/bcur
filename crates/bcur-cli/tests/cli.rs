@@ -148,7 +148,15 @@ fn qr_static_prints_unicode_blocks() {
 fn qr_animate_without_tty_fails() {
     let payload = vec![0x5a_u8; 256];
     bcur()
-        .args(["encode", "--qr", "--animate", "--max-chars", "80"])
+        .args([
+            "encode",
+            "--qr",
+            "--animate",
+            "--type",
+            "bytes",
+            "--max-chars",
+            "80",
+        ])
         .write_stdin(payload)
         .assert()
         .failure()

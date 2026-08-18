@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "bcur-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "bcur",

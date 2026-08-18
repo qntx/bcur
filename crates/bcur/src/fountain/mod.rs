@@ -866,6 +866,7 @@ mod tests {
                 .collect()
         })
         .collect();
+        assert_eq!(expected.len(), 30);
         for (i, e) in expected.iter().enumerate() {
             let mut indexes = choose_fragments(i + 1, fragments.len(), checksum);
             indexes.sort_unstable();

@@ -601,6 +601,7 @@ mod tests {
         let ur = make_message_ur(256, "Wolf");
         let mut encoder = Encoder::bytes(&ur, 30).unwrap();
         let expected = testdata_lines(include_str!("../../tests/vectors/ur_rs_multipart_20.txt"));
+        assert_eq!(expected.len(), 20);
         assert_eq!(encoder.fragment_count(), 9);
         for (index, e) in expected.into_iter().enumerate() {
             assert_eq!(encoder.current_index() as usize, index);

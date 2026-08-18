@@ -18,13 +18,15 @@ applies.
 ## Published specification examples
 
 These strings are public examples from BCR papers and bc-ur documentation,
-not source code. They live in
+not source code. The UR singles live in
 `crates/bcur/tests/vectors/published_single.txt`:
 
 - `ur:test/lsadaoaxjygonesw`
 - `ur:bytes/iehsjyhspmwfwfia`
 - Wolf/50 `ur:bytes/hdey…`
-- bytewords `able acid also lava zoom…`
+
+The bytewords phrase `able acid also lava zoom…` is the Standard-style
+golden in `crates/bcur/src/bytewords/mod.rs` (`test_bytewords`).
 
 They are used as interop goldens.
 

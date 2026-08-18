@@ -4,6 +4,8 @@ A Rust implementation of [Uniform Resources](https://github.com/BlockchainCommon
 
 URs encode binary data as URI-friendly strings for QR codes and unreliable channels, using [bytewords](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-012-bytewords.md) and fountain codes.
 
+Crate: [bcur on crates.io](https://crates.io/crates/bcur).
+
 ## License
 
 Licensed under either of:

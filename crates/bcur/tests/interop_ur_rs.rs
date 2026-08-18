@@ -18,7 +18,7 @@ fn single_part_wolf_uri_matches_ur_rs() {
     let golden = "ur:bytes/hdeymejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtgwdpfnsboxgwlbaawzuefywkdplrsrjynbvygabwjldapfcsdwkbrkch";
     let (kind, payload) = decode(golden).unwrap();
     assert_eq!(kind, Kind::SinglePart);
-    assert_eq!(encode(&payload, &UrType::bytes()).unwrap(), golden);
+    assert_eq!(encode(&payload, &UrType::bytes()), golden);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn crypto_request_single_part_matches_ur_rs() {
         .unwrap();
     let data = e.into_writer();
 
-    let encoded = encode(&data, &UrType::new("crypto-request").unwrap()).unwrap();
+    let encoded = encode(&data, &UrType::new("crypto-request").unwrap());
     assert_eq!(
         encoded,
         "ur:crypto-request/oeadtpdagdaobncpftlnylfgfgmuztihbawfsgrtflaotaadwkoyadtaaohdhdcxvsdkfgkepezepefrrffmbnnbmdvahnptrdtpbtuyimmemweootjshsmhlunyeslnameyhsdi"

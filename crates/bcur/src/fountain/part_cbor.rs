@@ -21,8 +21,12 @@ pub(crate) fn encode_part(part: &Part) -> Vec<u8> {
     out
 }
 
-/// Decodes a part from CBOR with a maximum `data` length.
-pub(crate) fn decode_part(bytes: &[u8], max_data_len: usize) -> Result<Part> {
+/// Decodes a part from CBOR with data-length and fragment-count caps.
+pub(crate) fn decode_part(
+    bytes: &[u8],
+    max_data_len: usize,
+    max_fragment_count: usize,
+) -> Result<Part> {
     let mut i = 0;
     let head = next_byte(bytes, &mut i)?;
     if head != 0x85 {
@@ -35,6 +39,16 @@ pub(crate) fn decode_part(bytes: &[u8], max_data_len: usize) -> Result<Part> {
     let data = decode_bstr(bytes, &mut i, max_data_len)?;
     if i != bytes.len() {
         return Err(Error::InvalidPartCbor);
+    }
+    if sequence == 0 {
+        return Err(Error::InvalidSequence);
+    }
+    if sequence_count == 0 || message_length == 0 || data.is_empty() {
+        return Err(Error::EmptyPart);
+    }
+    let count = usize::try_from(sequence_count).unwrap_or(usize::MAX);
+    if count > max_fragment_count {
+        return Err(Error::ResourceLimit("fragment_count"));
     }
     Ok(Part::from_fields(
         sequence,
@@ -215,7 +229,7 @@ mod tests {
             hex::encode(&cbor),
             "8501091901001a0167aa07581d916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c"
         );
-        let decoded = decode_part(&cbor, 8192).unwrap();
+        let decoded = decode_part(&cbor, 8192, 2000).unwrap();
         assert_eq!(decoded, part);
     }
 
@@ -227,8 +241,24 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            decode_part(&cbor, 8192),
+            decode_part(&cbor, 8192, 2000),
             Err(Error::InvalidPartCbor)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_sequence_fields() {
+        // [0, 1, 1, 0, h'00']
+        let zero_seq = hex::decode("85000101004100").unwrap();
+        assert!(matches!(
+            decode_part(&zero_seq, 8192, 2000),
+            Err(Error::InvalidSequence)
+        ));
+        // [1, 0, 1, 0, h'00']
+        let zero_count = hex::decode("85010001004100").unwrap();
+        assert!(matches!(
+            decode_part(&zero_count, 8192, 2000),
+            Err(Error::EmptyPart)
         ));
     }
 
@@ -238,7 +268,7 @@ mod tests {
         let mut cbor = encode_part(&part);
         cbor.push(0x00);
         assert!(matches!(
-            decode_part(&cbor, 8192),
+            decode_part(&cbor, 8192, 2000),
             Err(Error::InvalidPartCbor)
         ));
     }
@@ -248,8 +278,18 @@ mod tests {
         let part = Part::from_fields(1, 1, 1, 0, alloc::vec![0; 32]);
         let cbor = encode_part(&part);
         assert!(matches!(
-            decode_part(&cbor, 16),
+            decode_part(&cbor, 16, 2000),
             Err(Error::ResourceLimit("fragment_data"))
+        ));
+    }
+
+    #[test]
+    fn rejects_oversize_fragment_count() {
+        let part = Part::from_fields(1, 9, 9, 0, alloc::vec![0xab]);
+        let cbor = encode_part(&part);
+        assert!(matches!(
+            decode_part(&cbor, 8192, 8),
+            Err(Error::ResourceLimit("fragment_count"))
         ));
     }
 }

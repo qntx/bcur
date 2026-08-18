@@ -1,46 +1,36 @@
-# Makefile for bcur
+# Delegates to the Justfile so fmt/clippy flags stay in one place.
 
-.PHONY: all build check check-no-std test clippy clippy-fix fmt doc update
+.PHONY: all build check check-no-std test clippy clippy-fix fmt doc update quality
 
-all: fmt clippy-fix check-no-std test
+all:
+	just all
 
 build:
-	cargo build --workspace --release --all-features
+	just build
 
 check:
-	cargo check --workspace --all-features
+	just check
 
-# Bare-metal no_std check (core transport only; dcbor implies std).
 check-no-std:
-	cargo check -p bcur --target thumbv7m-none-eabi --no-default-features
+	just check-no-std
 
 update:
-	cargo update
+	just update
 
 test:
-	cargo test --workspace --all-features
-
-bench:
-	cargo bench --all-features
+	just test
 
 clippy:
-	cargo +nightly clippy --workspace \
-		--all-targets \
-		--all-features \
-		-- -D warnings
+	just clippy
 
 clippy-fix:
-	cargo +nightly clippy --workspace \
-		--fix \
-		--all-targets \
-		--all-features \
-		--allow-dirty \
-		--allow-staged \
-		-- -D warnings
+	just clippy-fix
 
 fmt:
-	cargo +nightly fmt --all -- \
-		--config unstable_features=true,group_imports=StdExternalCrate,imports_granularity=Module
+	just fmt
 
 doc:
-	cargo +nightly doc --workspace --all-features --open
+	just doc
+
+quality:
+	just quality

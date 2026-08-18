@@ -86,13 +86,15 @@ fn type_stickiness_does_not_poison() {
 }
 
 #[test]
-fn not_multipart_does_not_poison() {
+fn single_part_receive_does_not_poison() {
     let mut decoder = Decoder::default();
-    assert!(matches!(
-        decoder.receive("ur:bytes/iehsjyhspmwfwfia"),
-        Err(Error::NotMultiPart)
-    ));
+    decoder.receive("ur:bytes/iehsjyhspmwfwfia").unwrap();
+    assert!(decoder.complete());
     assert!(!decoder.is_poisoned());
+    assert_eq!(
+        decoder.message().unwrap().as_deref(),
+        Some(b"data".as_slice())
+    );
 }
 
 #[test]

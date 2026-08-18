@@ -4,18 +4,16 @@ default-members = ["crates/bcur"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-# Minimum supported Rust version. `edition = "2024"` was stabilized in 1.85;
-# we pin to 1.85 here and enforce it in CI. Bumping this is a breaking change.
-rust-version = "1.85"
+# Minimum supported Rust version. `edition = "2024"` stabilized in 1.85;
+# 1.86 is required by criterion 0.8 (dev-dep). Bumping this is a breaking change.
+rust-version = "1.86"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/qntx/bcur"
 description = "A Rust implementation of Uniform Resources"
 keywords = ["ur", "bytewords", "fountain", "cbor", "qr"]
 categories = ["encoding", "cryptography", "no-std"]
-
-[workspace.dependencies]
 
 [profile.release]
 codegen-units = 1

@@ -6,9 +6,7 @@ URs encode binary data as URI-friendly strings for QR codes and unreliable chann
 
 ## Status
 
-**0.1.0 — transport layer.** Bytewords, fountain, multi-part UR, decoder resource limits, and interop goldens (ur-rs / bc-ur vectors). Wire-compatible with common BCR UR stacks for the transport surface.
-
-Typed dCBOR (`feature = "dcbor"`) is planned for **0.2**. Bytemoji is reserved.
+**0.2.0 — transport + optional typed dCBOR.** Bytewords, fountain, multi-part UR, decoder resource limits, interop goldens (ur-rs / bc-ur vectors), and `feature = "dcbor"` value types / traits. Bytemoji is reserved.
 
 Design notes: [`docs/design/bcur-ur-design.md`](docs/design/bcur-ur-design.md)  
 Changelog: [`CHANGELOG.md`](CHANGELOG.md)
@@ -17,7 +15,7 @@ Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 
 ```toml
 [dependencies]
-bcur = "0.1"
+bcur = "0.2"
 ```
 
 ```rust
@@ -49,13 +47,21 @@ let mut decoder = Decoder::with_limits(limits);
 
 Default limit numbers are experimental before 1.0; hosts with fixed budgets should set `DecoderLimits` explicitly.
 
+### Typed dCBOR (`feature = "dcbor"`)
+
+```rust
+use bcur::Ur;
+
+let ur = Ur::new("test", vec![1, 2, 3]).unwrap();
+assert_eq!(ur.string(), "ur:test/lsadaoaxjygonesw");
+```
+
 ## Features
 
 | Feature | Default | Description |
-|---------|---------|-------------|
+| --------- | --------- | ------------- |
 | `std` | yes | Host builds |
-| `dcbor` | no | Typed dCBOR layer (**stub** until 0.2) |
-| `bytemoji` | no | Bytemoji helpers (**planned**) |
+| `dcbor` | no | Typed `Ur` / `UrEncodable` / multipart wrappers (implies `std`) |
 
 `no_std` + `alloc`:
 
@@ -69,7 +75,12 @@ cargo check -p bcur --target thumbv7m-none-eabi --no-default-features
 just quality          # fmt-check, clippy -D warnings, test, no_std, cargo-deny
 just bench-check      # compile criterion benches
 cargo run -p bcur --example multipart_progress
+cargo run -p bcur-cli -- encode --type test --hex <<<83010203
 ```
+
+### CLI (`bcur-cli`)
+
+Workspace crate `bcur-cli` installs the `bcur` binary: encode/decode UR text, optional terminal QR (static or fountain animation). Payload bytes are not wrapped as CBOR. See [`crates/bcur-cli/README.md`](crates/bcur-cli/README.md).
 
 ## License
 

@@ -69,9 +69,6 @@ pub enum Error {
     /// Multi-part sequence indices were missing or inconsistent with the part.
     #[error("invalid multi-part indices")]
     InvalidIndices,
-    /// A multi-part API was used on a single-part UR.
-    #[error("expected multi-part UR")]
-    NotMultiPart,
     /// A single-part API was used on a multi-part UR.
     #[error("expected single-part UR")]
     NotSinglePart,

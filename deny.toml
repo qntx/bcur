@@ -9,7 +9,7 @@ yanked = "warn"
 # `dcbor` transitively depends on unmaintained `paste` (RUSTSEC-2024-0436).
 # Ignore until upstream switches; do not expand ignore list casually.
 ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "transitive via optional dcbor; revisit in 0.2 typed layer" },
+    { id = "RUSTSEC-2024-0436", reason = "transitive via optional dcbor (unmaintained paste); drop when dcbor replaces it" },
 ]
 
 [licenses]

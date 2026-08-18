@@ -481,7 +481,8 @@ impl Decoder {
         }
     }
 
-    /// Whether this multi-part session is poisoned (UR or fountain resource limit).
+    /// Whether this session is fail-closed (`ResourceLimit` or `DecoderState`,
+    /// including the inner fountain decoder).
     #[must_use]
     pub const fn is_poisoned(&self) -> bool {
         self.poisoned.is_some() || self.fountain.is_poisoned()

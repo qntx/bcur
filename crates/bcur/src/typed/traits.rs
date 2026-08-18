@@ -171,4 +171,13 @@ mod tests {
             Error::UnexpectedType { .. }
         ));
     }
+
+    #[test]
+    fn from_ur_maps_untagged_type_mismatch_to_cbor_type() {
+        let ur = Ur::new("note", 1_u8).unwrap();
+        assert!(matches!(
+            NamedNote::from_ur(&ur).unwrap_err(),
+            Error::Cbor(ref e) if e.kind() == CborErrorKind::Type
+        ));
+    }
 }

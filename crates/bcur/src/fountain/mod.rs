@@ -191,7 +191,8 @@ impl Decoder {
         }
     }
 
-    /// Whether a previous `ResourceLimit` poisoned this decoder.
+    /// Whether a previous [`Error::ResourceLimit`] or [`Error::DecoderState`]
+    /// poisoned this decoder.
     #[must_use]
     pub const fn is_poisoned(&self) -> bool {
         self.poisoned.is_some()

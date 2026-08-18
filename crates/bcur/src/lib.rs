@@ -2,14 +2,14 @@
 //!
 //! # Status
 //!
-//! **0.1** ships the transport stack: bytewords, fountain codes, multi-part UR,
-//! and [`DecoderLimits`]. Typed dCBOR (`feature = "dcbor"`) is a stub until 0.2.
+//! **0.2** ships the transport stack (bytewords, fountain codes, multi-part UR,
+//! [`DecoderLimits`]) and an optional typed dCBOR layer.
 //!
 //! # Features
 //!
 //! - **`std`** (default): host builds.
-//! - **`dcbor`**: optional typed dCBOR layer (implies `std`; API from 0.2).
-//! - **`bytemoji`**: optional bytemoji helpers (planned).
+//! - **`dcbor`**: typed [`typed::Ur`] and [`UrEncodable`] / [`UrDecodable`]
+//!   (implies `std`).
 //!
 //! Core transport always requires `alloc` and supports `no_std` via
 //! `--no-default-features`.
@@ -27,6 +27,17 @@
 //!     }
 //! }
 //! assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
+//! ```
+//!
+//! Typed dCBOR (`feature = "dcbor"`):
+//!
+//! ```
+//! # #[cfg(feature = "dcbor")]
+//! # {
+//! use bcur::Ur;
+//! let ur = Ur::new("test", vec![1, 2, 3]).unwrap();
+//! assert_eq!(ur.string(), "ur:test/lsadaoaxjygonesw");
+//! # }
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -47,13 +58,14 @@ mod rng;
 pub use error::{Error, Result};
 pub use fountain::DecoderLimits;
 pub use ur::{
-    Decoder, Encoder, Kind, ParsedUr, UrType, decode, decode_with_type, encode, normalize_ur,
-    parse, parse_normalized, qr_string,
+    Decoder, Encoder, Kind, ParsedUr, UrType, decode, decode_message, decode_with_type, encode,
+    normalize_ur, parse, qr_string,
 };
 
 #[cfg(feature = "dcbor")]
 pub mod typed;
-
 // Dev-only tools are linked into test/bench targets; keep the lib lint clean.
 #[cfg(test)]
 use criterion as _;
+#[cfg(feature = "dcbor")]
+pub use typed::{MultipartDecoder, MultipartEncoder, Ur, UrCodable, UrDecodable, UrEncodable};

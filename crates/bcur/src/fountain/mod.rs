@@ -200,6 +200,25 @@ impl Decoder {
         Error::ResourceLimit(reason)
     }
 
+    fn escalate(&mut self, err: Error) -> Error {
+        match err {
+            Error::ResourceLimit(reason) => self.poison(reason),
+            Error::DecoderState => {
+                self.poisoned = Some("decoder_state");
+                Error::DecoderState
+            }
+            other => other,
+        }
+    }
+
+    fn poison_error(reason: &'static str) -> Error {
+        if reason == "decoder_state" {
+            Error::DecoderState
+        } else {
+            Error::ResourceLimit(reason)
+        }
+    }
+
     /// Receives a fountain part.
     ///
     /// # Errors
@@ -207,7 +226,7 @@ impl Decoder {
     /// Returns an error if the part is invalid, inconsistent, or exceeds limits.
     pub fn receive(&mut self, part: Part) -> Result<bool> {
         if let Some(reason) = self.poisoned {
-            return Err(Error::ResourceLimit(reason));
+            return Err(Self::poison_error(reason));
         }
         if self.complete() {
             return Ok(false);
@@ -236,7 +255,8 @@ impl Decoder {
             let product = frag_len
                 .checked_mul(sc)
                 .ok_or_else(|| self.poison("message_length"))?;
-            if product < ml {
+            // Partition pads with at most `frag_len - 1` bytes.
+            if product < ml || product - ml >= frag_len {
                 return Err(Error::InconsistentPart);
             }
             self.sequence_count = sc;
@@ -256,13 +276,13 @@ impl Decoder {
         }
         self.received.insert(indexes);
         if part.is_simple() {
-            self.enqueue_simple(part)?;
+            self.enqueue_simple(part).map_err(|e| self.escalate(e))?;
         } else {
-            self.process_complex(part)?;
+            self.process_complex(part).map_err(|e| self.escalate(e))?;
         }
         // Always drain the reduction queue after ingest so that a complex part
         // reduced to a simple fragment still cascades into the XOR buffer.
-        self.process_queue()?;
+        self.process_queue().map_err(|e| self.escalate(e))?;
         Ok(true)
     }
 
@@ -357,6 +377,18 @@ impl Decoder {
         self.limits.max_fragment_data_length
     }
 
+    /// Max source fragment count `K` configured for this decoder.
+    #[must_use]
+    pub const fn max_fragment_count(&self) -> usize {
+        self.limits.max_fragment_count
+    }
+
+    /// Max original message length configured for this decoder.
+    #[must_use]
+    pub const fn max_message_length(&self) -> usize {
+        self.limits.max_message_length
+    }
+
     /// Whether all source fragments have been recovered.
     #[must_use]
     pub fn complete(&self) -> bool {
@@ -398,7 +430,7 @@ impl Decoder {
     /// Returns padding or checksum errors if the joined payload is invalid.
     pub fn message(&self) -> Result<Option<Vec<u8>>> {
         if let Some(reason) = self.poisoned {
-            return Err(Error::ResourceLimit(reason));
+            return Err(Self::poison_error(reason));
         }
         if !self.complete() {
             return Ok(None);
@@ -512,16 +544,25 @@ impl Part {
     ///
     /// Returns CBOR or resource-limit errors.
     pub fn from_cbor(bytes: &[u8]) -> Result<Self> {
-        Self::from_cbor_with_max(bytes, DecoderLimits::default().max_fragment_data_length)
+        let limits = DecoderLimits::default();
+        Self::from_cbor_with_max(
+            bytes,
+            limits.max_fragment_data_length,
+            limits.max_fragment_count,
+        )
     }
 
-    /// Decodes a part from CBOR with an explicit max data length.
+    /// Decodes a part from CBOR with explicit data and fragment-count caps.
     ///
     /// # Errors
     ///
     /// Returns CBOR or resource-limit errors.
-    pub fn from_cbor_with_max(bytes: &[u8], max_data_len: usize) -> Result<Self> {
-        part_cbor::decode_part(bytes, max_data_len)
+    pub fn from_cbor_with_max(
+        bytes: &[u8],
+        max_data_len: usize,
+        max_fragment_count: usize,
+    ) -> Result<Self> {
+        part_cbor::decode_part(bytes, max_data_len, max_fragment_count)
     }
 
     /// Sequence id string `"{seq}-{count}"`.
@@ -556,6 +597,9 @@ pub(crate) fn choose_fragments(
     fragment_count: usize,
     checksum: u32,
 ) -> Vec<usize> {
+    if sequence == 0 || fragment_count == 0 {
+        return Vec::new();
+    }
     if sequence <= fragment_count {
         return alloc::vec![sequence - 1];
     }
@@ -590,6 +634,16 @@ fn xor(v1: &mut [u8], v2: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
     use crate::rng::test_utils::make_message;
+
+    #[test]
+    fn oversized_padding_is_inconsistent() {
+        let mut decoder = Decoder::default();
+        let part = Part::from_fields(1, 10, 1, 0, vec![0_u8; 100]);
+        assert!(matches!(
+            decoder.receive(part),
+            Err(Error::InconsistentPart)
+        ));
+    }
 
     #[test]
     fn test_fragment_length() {

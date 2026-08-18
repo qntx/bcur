@@ -16,7 +16,7 @@ use bcur::{Decoder, Encoder, Kind, UrType, decode, encode, qr_string};
 #[test]
 fn bc_ur_array_123_single_part() {
     let cbor = hex::decode("83010203").unwrap();
-    let ur = encode(&cbor, &UrType::new("test").unwrap()).unwrap();
+    let ur = encode(&cbor, &UrType::new("test").unwrap());
     assert_eq!(ur, "ur:test/lsadaoaxjygonesw");
     let (kind, data) = decode(&ur).unwrap();
     assert_eq!(kind, Kind::SinglePart);
@@ -26,7 +26,7 @@ fn bc_ur_array_123_single_part() {
 #[test]
 fn uppercase_qr_roundtrip_single_and_multi() {
     let cbor = hex::decode("83010203").unwrap();
-    let lower = encode(&cbor, &UrType::new("test").unwrap()).unwrap();
+    let lower = encode(&cbor, &UrType::new("test").unwrap());
     let upper = qr_string(&lower);
     assert_eq!(decode(&upper).unwrap(), decode(&lower).unwrap());
 

@@ -12,5 +12,5 @@ jobs:
   release:
     uses: qntx/workflows/.github/workflows/release-rust.yml@main
     with:
-      bin: kobe
-      package: kobe-cli
+      bin: bcur
+      package: bcur-cli

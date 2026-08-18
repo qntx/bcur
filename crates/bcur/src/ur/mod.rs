@@ -58,6 +58,22 @@ impl TryFrom<&str> for UrType {
     }
 }
 
+impl TryFrom<String> for UrType {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Self::new(&value)
+    }
+}
+
+impl TryFrom<&Self> for UrType {
+    type Error = Error;
+
+    fn try_from(value: &Self) -> Result<Self> {
+        Ok(value.clone())
+    }
+}
+
 /// Whether a decoded UR is single- or multi-part.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -88,12 +104,11 @@ pub fn normalize_ur(uri: &str) -> String {
 
 /// Encodes a single-part UR. Empty `data` is allowed.
 ///
-/// # Errors
-///
-/// Only fails if `ur_type` is invalid (already-validated types always succeed).
-pub fn encode(data: &[u8], ur_type: &UrType) -> Result<String> {
+/// `ur_type` is already validated, so this cannot fail.
+#[must_use]
+pub fn encode(data: &[u8], ur_type: &UrType) -> String {
     let body = bytewords::encode(data, Style::Minimal);
-    Ok(alloc::format!("ur:{}/{body}", ur_type.as_str()))
+    alloc::format!("ur:{}/{body}", ur_type.as_str())
 }
 
 /// Decodes payload bytes from a single- or multi-part UR (type is discarded).
@@ -106,6 +121,21 @@ pub fn encode(data: &[u8], ur_type: &UrType) -> Result<String> {
 pub fn decode(uri: &str) -> Result<(Kind, Vec<u8>)> {
     let (kind, payload, _) = decode_with_indices(uri)?;
     Ok((kind, payload))
+}
+
+/// Decodes a **single-part** UR to its payload bytes.
+///
+/// Multi-part URIs return [`Error::NotSinglePart`]; use [`Decoder`] for those.
+///
+/// # Errors
+///
+/// Parse, type, bytewords, or [`Error::NotSinglePart`].
+pub fn decode_message(uri: &str) -> Result<Vec<u8>> {
+    let (kind, payload) = decode(uri)?;
+    match kind {
+        Kind::SinglePart => Ok(payload),
+        Kind::MultiPart => Err(Error::NotSinglePart),
+    }
 }
 
 /// Like [`decode`] but retains the normalized type.
@@ -125,20 +155,10 @@ pub fn decode_with_type(uri: &str) -> Result<(UrType, Kind, Vec<u8>)> {
 ///
 /// Returns scheme, type, or index errors. Does not decode bytewords.
 pub fn parse(uri: &str) -> Result<ParsedUr> {
-    let lowered = normalize_ur(uri);
-    parse_normalized(&lowered)
+    parse_lowered(&normalize_ur(uri))
 }
 
-/// Parses a UR that is already lowercase (or folds the body to keep the contract).
-///
-/// Prefer [`parse`] for untrusted QR strings. This entry point avoids a full-URI
-/// allocation when the caller has already case-folded, but still lowercases the
-/// body so [`ParsedUr::body`] is always lowercase.
-///
-/// # Errors
-///
-/// Returns scheme, type, or index errors.
-pub fn parse_normalized(uri: &str) -> Result<ParsedUr> {
+fn parse_lowered(uri: &str) -> Result<ParsedUr> {
     let strip_scheme = uri.strip_prefix("ur:").ok_or(Error::InvalidScheme)?;
     let (type_str, rest) = strip_scheme.split_once('/').ok_or(Error::TypeUnspecified)?;
     let ur_type = UrType::new(type_str)?;
@@ -189,11 +209,12 @@ fn validate_type(s: &str) -> Result<()> {
     Ok(())
 }
 
-/// Multi-part UR encoder owning the payload.
+/// UR encoder owning the payload (single-part when `K == 1`).
 #[derive(Debug)]
 pub struct Encoder {
     fountain: fountain::Encoder,
     ur_type: UrType,
+    message: Vec<u8>,
 }
 
 impl Encoder {
@@ -208,6 +229,9 @@ impl Encoder {
 
     /// Creates an encoder with a custom type.
     ///
+    /// When the payload fits in one fragment (`K == 1`), [`Self::next_part`]
+    /// emits a single-part `ur:<type>/<bytewords>` string (BCR-2024-001).
+    ///
     /// # Errors
     ///
     /// Propagates type validation and fountain construction errors.
@@ -215,16 +239,29 @@ impl Encoder {
         Ok(Self {
             fountain: fountain::Encoder::new(message, max_fragment_length)?,
             ur_type: ur_type.clone(),
+            message: message.to_vec(),
         })
     }
 
-    /// Emits the next multi-part UR string.
+    /// Whether this encoder emits a single-part UR (`K == 1`).
+    #[must_use]
+    pub const fn is_single_part(&self) -> bool {
+        self.fountain.fragment_count() == 1
+    }
+
+    /// Emits the next UR string.
+    ///
+    /// Single-fragment messages use the single-part form. Larger messages use
+    /// fountain `ur:<type>/<seq>-<count>/<bytewords>`.
     ///
     /// # Errors
     ///
     /// Returns sequence resource limits from the fountain encoder.
     pub fn next_part(&mut self) -> Result<String> {
         let part = self.fountain.next_part()?;
+        if self.is_single_part() {
+            return Ok(encode(&self.message, &self.ur_type));
+        }
         let body = bytewords::encode(&part.to_cbor(), Style::Minimal);
         Ok(alloc::format!(
             "ur:{}/{}/{body}",
@@ -246,14 +283,16 @@ impl Encoder {
     }
 }
 
-/// Multi-part UR decoder.
+/// UR decoder (single-part or fountain).
 #[derive(Debug)]
 pub struct Decoder {
     fountain: fountain::Decoder,
     max_uri_len: usize,
+    max_message_length: usize,
     expected_type: Option<UrType>,
     seen_type: Option<UrType>,
-    /// Fail-closed session flag for UR-layer `ResourceLimit` (e.g. `uri_len`).
+    single: Option<Vec<u8>>,
+    /// Fail-closed session flag (`ResourceLimit` reason or `"decoder_state"`).
     poisoned: Option<&'static str>,
 }
 
@@ -276,8 +315,10 @@ impl Decoder {
         Self {
             fountain: fountain::Decoder::with_limits(limits),
             max_uri_len: limits.max_uri_len,
+            max_message_length: limits.max_message_length,
             expected_type: None,
             seen_type: None,
+            single: None,
             poisoned: None,
         }
     }
@@ -294,23 +335,59 @@ impl Decoder {
         Error::ResourceLimit(reason)
     }
 
-    /// Map fountain/part CBOR resource limits into a poisoned UR session.
-    fn map_resource_limit(&mut self, err: Error) -> Error {
+    fn escalate(&mut self, err: Error) -> Error {
         match err {
             Error::ResourceLimit(reason) => self.poison(reason),
+            Error::DecoderState => {
+                self.poisoned = Some("decoder_state");
+                Error::DecoderState
+            }
             other => other,
         }
     }
 
-    /// Receives one multi-part UR string.
+    fn poison_error(reason: &'static str) -> Error {
+        if reason == "decoder_state" {
+            Error::DecoderState
+        } else {
+            Error::ResourceLimit(reason)
+        }
+    }
+
+    fn check_type(&self, ur_type: &UrType) -> Result<()> {
+        if let Some(ref expected) = self.expected_type {
+            if ur_type != expected {
+                return Err(Error::UnexpectedType {
+                    expected: String::from(expected.as_str()),
+                    found: String::from(ur_type.as_str()),
+                });
+            }
+        }
+        if let Some(ref seen) = self.seen_type {
+            if ur_type != seen {
+                return Err(Error::UnexpectedType {
+                    expected: String::from(seen.as_str()),
+                    found: String::from(ur_type.as_str()),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Receives one UR string (single-part or fountain part).
+    ///
+    /// A single-part URI completes the session immediately. Fountain parts are
+    /// combined until the message is recovered. The first **successfully**
+    /// ingested part pins the type.
     ///
     /// # Errors
     ///
     /// Returns parse, type, index, bytewords, CBOR, or fountain errors.
-    /// Any [`Error::ResourceLimit`] poisons the session (fail-closed).
+    /// [`Error::ResourceLimit`] and unrecoverable [`Error::DecoderState`]
+    /// poison the session (fail-closed).
     pub fn receive(&mut self, value: &str) -> Result<()> {
         if let Some(reason) = self.poisoned {
-            return Err(Error::ResourceLimit(reason));
+            return Err(Self::poison_error(reason));
         }
 
         if value.len() > self.max_uri_len {
@@ -318,50 +395,61 @@ impl Decoder {
         }
 
         let parsed = parse(value)?;
-        if parsed.kind != Kind::MultiPart {
-            return Err(Error::NotMultiPart);
+        self.check_type(&parsed.ur_type)?;
+        match parsed.kind {
+            Kind::SinglePart => self.receive_single(parsed),
+            Kind::MultiPart => self.receive_fountain(parsed),
         }
+    }
 
-        if let Some(ref expected) = self.expected_type {
-            if &parsed.ur_type != expected {
-                return Err(Error::UnexpectedType {
-                    expected: String::from(expected.as_str()),
-                    found: String::from(parsed.ur_type.as_str()),
-                });
-            }
+    fn receive_single(&mut self, parsed: ParsedUr) -> Result<()> {
+        if self.fountain.resolved_fragment_count().is_some() {
+            return Err(Error::InconsistentPart);
         }
-
-        match &self.seen_type {
-            None => self.seen_type = Some(parsed.ur_type.clone()),
-            Some(seen) if seen != &parsed.ur_type => {
-                return Err(Error::UnexpectedType {
-                    expected: String::from(seen.as_str()),
-                    found: String::from(parsed.ur_type.as_str()),
-                });
-            }
-            Some(_) => {}
+        if self.single.is_some() {
+            return Ok(());
         }
+        let data = bytewords::decode(&parsed.body, Style::Minimal)?;
+        if data.len() > self.max_message_length {
+            return Err(self.poison("message_length"));
+        }
+        self.seen_type = Some(parsed.ur_type);
+        self.single = Some(data);
+        Ok(())
+    }
 
+    fn receive_fountain(&mut self, parsed: ParsedUr) -> Result<()> {
+        if self.single.is_some() {
+            return Err(Error::InconsistentPart);
+        }
         let decoded = bytewords::decode(&parsed.body, Style::Minimal)?;
         let part = fountain::Part::from_cbor_with_max(
             decoded.as_slice(),
             self.fountain.max_fragment_data_length(),
+            self.fountain.max_fragment_count(),
         )
-        .map_err(|e| self.map_resource_limit(e))?;
+        .map_err(|e| self.escalate(e))?;
         let (idx, idx_total) = parsed.indices.ok_or(Error::InvalidIndices)?;
         if part.sequence() != idx || part.sequence_count() != idx_total {
             return Err(Error::InvalidIndices);
         }
-        self.fountain
-            .receive(part)
-            .map_err(|e| self.map_resource_limit(e))?;
+        self.fountain.receive(part).map_err(|e| self.escalate(e))?;
+        if self.seen_type.is_none() {
+            self.seen_type = Some(parsed.ur_type);
+        }
         Ok(())
     }
 
     /// Whether the message is fully recovered.
     #[must_use]
     pub fn complete(&self) -> bool {
-        self.fountain.complete()
+        self.single.is_some() || self.fountain.complete()
+    }
+
+    /// Type pinned by the first successfully received part.
+    #[must_use]
+    pub const fn ur_type(&self) -> Option<&UrType> {
+        self.seen_type.as_ref()
     }
 
     /// Returns the decoded message if complete.
@@ -371,7 +459,10 @@ impl Decoder {
     /// Propagates fountain message errors. Resource-limit sessions stay fail-closed.
     pub fn message(&self) -> Result<Option<Vec<u8>>> {
         if let Some(reason) = self.poisoned {
-            return Err(Error::ResourceLimit(reason));
+            return Err(Self::poison_error(reason));
+        }
+        if let Some(ref data) = self.single {
+            return Ok(Some(data.clone()));
         }
         self.fountain.message()
     }
@@ -379,13 +470,21 @@ impl Decoder {
     /// Resolved source fragment count, or `None` before any part.
     #[must_use]
     pub fn resolved_fragment_count(&self) -> Option<usize> {
-        self.fountain.resolved_fragment_count()
+        if self.single.is_some() {
+            Some(1)
+        } else {
+            self.fountain.resolved_fragment_count()
+        }
     }
 
     /// Total fragment count `K` (0 before any part).
     #[must_use]
-    pub const fn fragment_count(&self) -> usize {
-        self.fountain.fragment_count()
+    pub fn fragment_count(&self) -> u32 {
+        if self.single.is_some() {
+            1
+        } else {
+            u32::try_from(self.fountain.fragment_count()).unwrap_or(u32::MAX)
+        }
     }
 
     /// Whether this multi-part session is poisoned (UR or fountain resource limit).
@@ -417,7 +516,7 @@ mod tests {
     #[test]
     fn test_single_part_ur() {
         let ur = make_message_ur(50, "Wolf");
-        let encoded = encode(&ur, &UrType::bytes()).unwrap();
+        let encoded = encode(&ur, &UrType::bytes());
         let expected = "ur:bytes/hdeymejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtgwdpfnsboxgwlbaawzuefywkdplrsrjynbvygabwjldapfcsdwkbrkch";
         assert_eq!(encoded, expected);
         let decoded = decode(&encoded).unwrap();
@@ -491,7 +590,7 @@ mod tests {
         }
 
         let data = crypto_seed();
-        let encoded = encode(&data, &UrType::new("crypto-request").unwrap()).unwrap();
+        let encoded = encode(&data, &UrType::new("crypto-request").unwrap());
         let expected = "ur:crypto-request/oeadtpdagdaobncpftlnylfgfgmuztihbawfsgrtflaotaadwkoyadtaaohdhdcxvsdkfgkepezepefrrffmbnnbmdvahnptrdtpbtuyimmemweootjshsmhlunyeslnameyhsdi";
         assert_eq!(encoded, expected);
         let decoded = decode(&encoded).unwrap();
@@ -513,14 +612,14 @@ mod tests {
     #[test]
     fn test_data_encode() {
         assert_eq!(
-            encode(b"data", &UrType::bytes()).unwrap(),
+            encode(b"data", &UrType::bytes()),
             "ur:bytes/iehsjyhspmwfwfia"
         );
     }
 
     #[test]
     fn test_case_fold() {
-        let lower = encode(b"data", &UrType::bytes()).unwrap();
+        let lower = encode(b"data", &UrType::bytes());
         let upper = qr_string(&lower);
         assert_eq!(decode(&upper).unwrap(), decode(&lower).unwrap());
     }
@@ -557,12 +656,50 @@ mod tests {
     }
 
     #[test]
-    fn test_not_multipart() {
+    fn test_single_part_receive_completes() {
         let mut decoder = Decoder::default();
-        assert!(matches!(
-            decoder.receive("ur:bytes/iehsjyhspmwfwfia"),
-            Err(Error::NotMultiPart)
-        ));
+        decoder.receive("ur:bytes/iehsjyhspmwfwfia").unwrap();
+        assert!(decoder.complete());
+        assert_eq!(
+            decoder.message().unwrap().as_deref(),
+            Some(b"data".as_slice())
+        );
+    }
+
+    #[test]
+    fn test_encoder_k1_is_single_part() {
+        let data = b"hello";
+        let mut encoder = Encoder::bytes(data, 64).unwrap();
+        assert!(encoder.is_single_part());
+        let part = encoder.next_part().unwrap();
+        assert!(!part.contains("/1-1/"));
+        assert_eq!(part, encode(data, &UrType::bytes()));
+        let mut decoder = Decoder::default();
+        decoder.receive(&part).unwrap();
+        assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
+    }
+
+    #[test]
+    fn test_decode_message_rejects_multipart() {
+        let data = b"Ten chars!".repeat(8);
+        let mut encoder = Encoder::bytes(&data, 5).unwrap();
+        let part = encoder.next_part().unwrap();
+        assert!(matches!(decode_message(&part), Err(Error::NotSinglePart)));
+        assert_eq!(
+            decode_message(&encode(b"data", &UrType::bytes())).unwrap(),
+            b"data"
+        );
+    }
+
+    #[test]
+    fn test_garbage_does_not_pin_type() {
+        let data = b"Ten chars!".repeat(6);
+        let mut encoder = Encoder::new(&data, 5, &UrType::new("alpha").unwrap()).unwrap();
+        let mut decoder = Decoder::default();
+        assert!(decoder.receive("ur:beta/1-2/zzzz").is_err());
+        assert!(decoder.ur_type().is_none());
+        decoder.receive(&encoder.next_part().unwrap()).unwrap();
+        assert_eq!(decoder.ur_type().map(UrType::as_str), Some("alpha"));
     }
 
     #[test]
@@ -571,7 +708,7 @@ mod tests {
         // We only check roundtrip of raw CBOR bytes through bytewords path
         // using the known string from bc-ur docs when payload is correct CBOR.
         let cbor = hex::decode("83010203").unwrap(); // array(3) [1,2,3]
-        let ur = encode(&cbor, &UrType::new("test").unwrap()).unwrap();
+        let ur = encode(&cbor, &UrType::new("test").unwrap());
         assert_eq!(ur, "ur:test/lsadaoaxjygonesw");
         let (kind, data) = decode(&ur).unwrap();
         assert_eq!(kind, Kind::SinglePart);
@@ -580,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_parse_and_decode_with_type() {
-        let ur = encode(b"data", &UrType::bytes()).unwrap();
+        let ur = encode(b"data", &UrType::bytes());
         let parsed = parse(&ur).unwrap();
         assert_eq!(parsed.kind, Kind::SinglePart);
         assert_eq!(parsed.ur_type.as_str(), "bytes");
@@ -649,15 +786,15 @@ mod tests {
 
     #[test]
     fn test_empty_single_part() {
-        let ur = encode(&[], &UrType::bytes()).unwrap();
+        let ur = encode(&[], &UrType::bytes());
         let (kind, payload) = decode(&ur).unwrap();
         assert_eq!(kind, Kind::SinglePart);
         assert!(payload.is_empty());
     }
 
     #[test]
-    fn test_parse_normalized_body_is_lowercase() {
-        let parsed = parse_normalized("ur:bytes/IEHSJYHSPMWFWFIA").unwrap();
+    fn test_parse_folds_body() {
+        let parsed = parse("ur:bytes/IEHSJYHSPMWFWFIA").unwrap();
         assert_eq!(parsed.body, "iehsjyhspmwfwfia");
         assert_eq!(parsed.ur_type.as_str(), "bytes");
     }
@@ -698,19 +835,19 @@ mod tests {
 
         decoder.receive(&encoder.next_part().unwrap()).unwrap();
         assert_eq!(decoder.resolved_fragment_count(), Some(1));
-        assert_eq!(decoder.fragment_count(), encoder.fragment_count() as usize);
+        assert_eq!(decoder.fragment_count(), encoder.fragment_count());
 
         let mut prev = 1;
         while !decoder.complete() {
             decoder.receive(&encoder.next_part().unwrap()).unwrap();
             let now = decoder.resolved_fragment_count().unwrap();
             assert!(now >= prev);
-            assert!(now <= decoder.fragment_count());
+            assert!(now <= usize::try_from(decoder.fragment_count()).unwrap());
             prev = now;
         }
         assert_eq!(
             decoder.resolved_fragment_count(),
-            Some(decoder.fragment_count())
+            Some(usize::try_from(decoder.fragment_count()).unwrap())
         );
     }
 }

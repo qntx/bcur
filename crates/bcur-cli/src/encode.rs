@@ -12,8 +12,9 @@ use crate::qr::{animate_encoder, show_static, tty_max_chars};
 /// Encode a payload as Uniform Resource strings or a terminal QR.
 #[derive(Debug, Args)]
 pub(crate) struct EncodeArgs {
-    /// UR type token (`[a-z0-9-]+`). Not a schema: payload bytes are unchanged.
-    #[arg(long = "type", default_value = "bytes")]
+    /// UR type token (`[a-z0-9-]+`). A label only; payload bytes are sent raw.
+    /// `bytes` is the explicit test/generic token.
+    #[arg(long = "type")]
     ur_type: String,
     /// Fountain fragment payload size in bytes. Default: fit `--max-chars`.
     #[arg(long)]

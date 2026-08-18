@@ -28,9 +28,9 @@ printf '83010203' | bcur encode --type test --hex
 bcur encode --qr --type bytes payload.bin
 
 # Encoder path + QR loop (still single-part if the payload fits one fragment)
-bcur encode --animate --qr payload.bin
+bcur encode --animate --qr --type bytes payload.bin
 # force fountain frames: shrink the per-URI budget
-bcur encode --animate --qr --max-chars 80 payload.bin
+bcur encode --animate --qr --type bytes --max-chars 80 payload.bin
 
 # recover bytes from captured UR lines
 bcur decode --out recovered.bin < parts.txt
@@ -39,13 +39,13 @@ bcur decode --out recovered.bin < parts.txt
 bcur qr parts.txt
 ```
 
-`--type` is only the UR type token. Payload bytes are sent unchanged — there is no automatic CBOR `bstr` wrap.
+`--type` is only the UR type token (required on encode). Payload bytes are sent unchanged — there is no automatic CBOR `bstr` wrap. `bytes` is the explicit test/generic token.
 
 ## Defaults
 
 | Flag | Default | Role |
 |------|---------|------|
-| `--type` | `bytes` | Type token |
+| `--type` | none (required) | Type token |
 | `--max-chars` | `400` text / terminal-derived with `--qr` | Single vs fountain; fragment sizing |
 | `--interval-ms` | `200` | Animated QR frame time |
 | QR ECC | Quartile (Q) | Screen scan robustness |

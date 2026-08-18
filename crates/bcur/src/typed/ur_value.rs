@@ -5,7 +5,7 @@ use std::fmt;
 use dcbor::CBOR;
 
 use super::map_cbor;
-use crate::ur::Kind;
+use crate::ur::{IntoUrType, Kind};
 use crate::{CborErrorKind, Error, Result, UrType};
 
 /// A Uniform Resource whose payload is deterministic CBOR.
@@ -22,12 +22,9 @@ impl Ur {
     ///
     /// Returns [`Error::InvalidType`] if `ur_type` is empty or not
     /// `[a-z0-9-]+` after ASCII lowercasing.
-    pub fn new(
-        ur_type: impl TryInto<UrType, Error = Error>,
-        cbor: impl Into<CBOR>,
-    ) -> Result<Self> {
+    pub fn new(ur_type: impl IntoUrType, cbor: impl Into<CBOR>) -> Result<Self> {
         Ok(Self {
-            ur_type: ur_type.try_into()?,
+            ur_type: ur_type.into_ur_type()?,
             cbor: cbor.into(),
         })
     }
@@ -77,8 +74,8 @@ impl Ur {
     ///
     /// [`Error::InvalidType`] if `expected` is not a valid type token;
     /// [`Error::UnexpectedType`] on mismatch.
-    pub fn check_type(&self, expected: impl TryInto<UrType, Error = Error>) -> Result<()> {
-        let expected = expected.try_into()?;
+    pub fn check_type(&self, expected: impl IntoUrType) -> Result<()> {
+        let expected = expected.into_ur_type()?;
         if self.ur_type == expected {
             Ok(())
         } else {
@@ -192,7 +189,9 @@ mod tests {
     fn check_type_and_into_cbor() {
         let ur = Ur::new("test", vec![1, 2, 3]).unwrap();
         ur.check_type("test").unwrap();
+        ur.check_type(String::from("test")).unwrap();
         ur.check_type(ur.ur_type()).unwrap();
+        ur.check_type(ur.ur_type().clone()).unwrap();
         assert!(matches!(
             ur.check_type("bytes").unwrap_err(),
             Error::UnexpectedType { .. }

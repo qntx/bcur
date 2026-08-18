@@ -231,7 +231,7 @@ pub struct Decoder {
     received: BTreeSet<Vec<usize>>,
     buffer: BTreeMap<Vec<usize>, Part>,
     queue: Vec<(usize, Part)>,
-    sequence_count: usize,
+    sequence_count: u32,
     message_length: usize,
     checksum: u32,
     fragment_length: usize,
@@ -317,9 +317,10 @@ impl Decoder {
         }
 
         if self.received.is_empty() {
-            let sc = part.sequence_count as usize;
+            let sc = part.sequence_count;
+            let sc_usz = sc as usize;
             let ml = part.message_length as usize;
-            if sc > self.limits.max_fragment_count {
+            if sc_usz > self.limits.max_fragment_count {
                 return Err(self.poison(ResourceKind::FragmentCount));
             }
             if ml > self.limits.max_message_length {
@@ -327,7 +328,7 @@ impl Decoder {
             }
             let frag_len = part.data.len();
             let product = frag_len
-                .checked_mul(sc)
+                .checked_mul(sc_usz)
                 .ok_or_else(|| self.poison(ResourceKind::MessageLength))?;
             // Partition pads with at most `frag_len - 1` bytes.
             if product < ml || product - ml >= frag_len {
@@ -466,22 +467,26 @@ impl Decoder {
     /// Whether all source fragments have been recovered.
     #[must_use]
     pub fn complete(&self) -> bool {
-        self.message_length != 0 && self.decoded.len() == self.sequence_count
+        self.message_length != 0 && self.decoded.len() == self.sequence_count as usize
     }
 
     /// Number of resolved source fragments, or `None` before any part.
     #[must_use]
-    pub fn resolved_fragment_count(&self) -> Option<usize> {
+    pub fn resolved_fragment_count(&self) -> Option<u32> {
         if self.message_length == 0 {
             None
         } else {
-            Some(self.decoded.len())
+            debug_assert!(
+                u32::try_from(self.decoded.len()).is_ok(),
+                "decoded fragment count exceeds u32 (impossible under DecoderLimits)"
+            );
+            u32::try_from(self.decoded.len()).ok()
         }
     }
 
     /// Total fragment count `K`, or `0` before any part.
     #[must_use]
-    pub const fn fragment_count(&self) -> usize {
+    pub const fn fragment_count(&self) -> u32 {
         self.sequence_count
     }
 
@@ -491,7 +496,7 @@ impl Decoder {
         if self.received.is_empty() {
             return false;
         }
-        part.sequence_count as usize == self.sequence_count
+        part.sequence_count == self.sequence_count
             && part.message_length as usize == self.message_length
             && part.checksum == self.checksum
             && part.data.len() == self.fragment_length
@@ -509,8 +514,9 @@ impl Decoder {
         if !self.complete() {
             return Ok(None);
         }
-        let mut combined = Vec::with_capacity(self.fragment_length * self.sequence_count);
-        for idx in 0..self.sequence_count {
+        let k = self.sequence_count as usize;
+        let mut combined = Vec::with_capacity(self.fragment_length * k);
+        for idx in 0..k {
             let part = self.decoded.get(&idx).ok_or(Error::DecoderState)?;
             combined.extend_from_slice(&part.data);
         }

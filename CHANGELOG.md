@@ -16,8 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 
-- Docs: restore `THIRD_PARTY.md` and the L0–L3 vs L4 dCBOR contract
-  (`docs/design/layers.md`). No behavior change.
+- Docs: restore `THIRD_PARTY.md` and the L0–L3 vs L4 dCBOR contract in crate rustdoc. No behavior change.
 
 ## [0.2.0] — 2026-08-18
 

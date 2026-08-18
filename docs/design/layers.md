@@ -5,8 +5,7 @@
 | **Status** | Current (0.2.0) |
 | **Scope** | Transport vs dCBOR contract |
 
-This note is the written layering contract. It does not restore the deleted
-0.1 design spec.
+This note is the written layering contract.
 
 ## Contract
 

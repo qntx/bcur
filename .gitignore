@@ -25,3 +25,8 @@ target
 
 /target
 .DS_Store
+
+# cargo-fuzz (out-of-workspace)
+/fuzz/target
+/fuzz/artifacts
+/fuzz/coverage

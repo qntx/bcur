@@ -1,0 +1,46 @@
+[package]
+name = "bcur-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.bcur]
+path = "../crates/bcur"
+
+# Isolated from the parent workspace so thumbv7m / just quality never see libFuzzer.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "decode_ur"
+path = "fuzz_targets/decode_ur.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fountain_part"
+path = "fuzz_targets/fountain_part.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bytewords"
+path = "fuzz_targets/bytewords.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encode_roundtrip"
+path = "fuzz_targets/encode_roundtrip.rs"
+test = false
+doc = false
+bench = false

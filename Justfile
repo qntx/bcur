@@ -62,3 +62,16 @@ bench-check:
 
 # Full quality gate (no network except deny advisory DB if present)
 quality: fmt-check clippy test check-no-std deny
+
+fuzz-targets := "decode_ur fountain_part bytewords encode_roundtrip"
+
+fuzz-build:
+    cargo +nightly fuzz build
+
+# local smoke: 60s per target, all four
+fuzz:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in {{fuzz-targets}}; do
+        cargo +nightly fuzz run "$t" -- -max_total_time=60 -timeout=5
+    done

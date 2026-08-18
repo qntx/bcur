@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Lockfile: `bitcoin_hashes` 1.2.0, `minicbor` 2.3.0, `thiserror` 2.0.20,
+  and latest compatible transitives (`cc` 1.4.3, `wasm-bindgen` 0.2.127,
+  `zerocopy` 0.8.56, `futures-*` 0.3.34). `Cargo.toml` ranges were already
+  at current majors; no incompatible upgrades exist.
+
 ## [0.2.0] — 2026-08-18
 
 Optional typed dCBOR layer (`feature = "dcbor"`, implies `std`).

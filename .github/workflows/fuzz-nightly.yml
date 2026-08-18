@@ -1,0 +1,41 @@
+name: Fuzz nightly
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src, llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+          cache-directories: fuzz/target
+      - name: Install clang (libFuzzer)
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Run fuzz targets
+        working-directory: ${{ github.workspace }}
+        env:
+          RUSTFLAGS: "-C linker=clang"
+        run: |
+          set -euo pipefail
+          for t in decode_ur fountain_part bytewords encode_roundtrip; do
+            cargo +nightly fuzz run "$t" -- \
+              -max_total_time=600 -timeout=5 -rss_limit_mb=2048
+          done
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/

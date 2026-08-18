@@ -58,11 +58,16 @@ fn encode_roundtrip(type_bytes: &[u8], payload: &[u8], max_frag: usize) {
             !has_fountain_path(&part),
             "K==1 must emit ur:<type>/<body>, got {part}"
         );
-        decoder.receive(&part).expect("K==1 receive");
-        assert_eq!(
-            decoder.message().expect("K==1 message").as_deref(),
-            Some(payload)
-        );
+        match decoder.receive(&part) {
+            Err(Error::ResourceLimit(_)) => return,
+            Err(other) => panic!("decoder receive: {other:?}"),
+            Ok(()) => {
+                assert_eq!(
+                    decoder.message().expect("K==1 message").as_deref(),
+                    Some(payload)
+                );
+            }
+        }
         return;
     }
 

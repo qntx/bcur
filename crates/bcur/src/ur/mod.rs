@@ -67,11 +67,57 @@ impl TryFrom<String> for UrType {
     }
 }
 
-impl TryFrom<&Self> for UrType {
-    type Error = Error;
+/// Conversion into a validated [`UrType`].
+///
+/// Implemented for [`UrType`], `&UrType`, [`&str`], and [`String`].
+/// Not for downstream impls (sealed).
+pub trait IntoUrType: sealed::Sealed {
+    /// Validates or clones into a [`UrType`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidType`] for an empty or illegal type token.
+    fn into_ur_type(self) -> Result<UrType>;
+}
 
-    fn try_from(value: &Self) -> Result<Self> {
-        Ok(value.clone())
+#[allow(
+    unreachable_pub,
+    reason = "Sealed must be pub so IntoUrType can be public; module is private"
+)]
+mod sealed {
+    use alloc::string::String;
+
+    use super::UrType;
+
+    /// Not implementable outside this crate.
+    pub trait Sealed {}
+    impl Sealed for UrType {}
+    impl Sealed for &UrType {}
+    impl Sealed for &str {}
+    impl Sealed for String {}
+}
+
+impl IntoUrType for UrType {
+    fn into_ur_type(self) -> Result<UrType> {
+        Ok(self)
+    }
+}
+
+impl IntoUrType for &UrType {
+    fn into_ur_type(self) -> Result<UrType> {
+        Ok(self.clone())
+    }
+}
+
+impl IntoUrType for &str {
+    fn into_ur_type(self) -> Result<UrType> {
+        UrType::new(self)
+    }
+}
+
+impl IntoUrType for String {
+    fn into_ur_type(self) -> Result<UrType> {
+        UrType::new(&self)
     }
 }
 
@@ -463,7 +509,7 @@ impl Decoder {
 
     /// Resolved source fragment count, or `None` before any part.
     #[must_use]
-    pub fn resolved_fragment_count(&self) -> Option<usize> {
+    pub fn resolved_fragment_count(&self) -> Option<u32> {
         if self.single.is_some() {
             Some(1)
         } else {
@@ -473,11 +519,11 @@ impl Decoder {
 
     /// Total fragment count `K` (0 before any part).
     #[must_use]
-    pub fn fragment_count(&self) -> u32 {
+    pub const fn fragment_count(&self) -> u32 {
         if self.single.is_some() {
             1
         } else {
-            u32::try_from(self.fountain.fragment_count()).unwrap_or(u32::MAX)
+            self.fountain.fragment_count()
         }
     }
 
@@ -725,6 +771,16 @@ mod tests {
     }
 
     #[test]
+    fn test_into_ur_type_accepts_owned_and_borrowed() {
+        let t = UrType::new("bytes").unwrap();
+        assert_eq!(t.clone().into_ur_type().unwrap(), t);
+        assert_eq!(IntoUrType::into_ur_type(&t).unwrap(), t);
+        assert_eq!("bytes".into_ur_type().unwrap(), t);
+        assert_eq!(String::from("bytes").into_ur_type().unwrap(), t);
+        assert!(matches!("".into_ur_type(), Err(Error::InvalidType)));
+    }
+
+    #[test]
     fn test_invalid_type_and_indices() {
         assert!(matches!(UrType::new(""), Err(Error::InvalidType)));
         assert!(matches!(UrType::new("Bad_Type"), Err(Error::InvalidType)));
@@ -837,12 +893,12 @@ mod tests {
             decoder.receive(&encoder.next_part().unwrap()).unwrap();
             let now = decoder.resolved_fragment_count().unwrap();
             assert!(now >= prev);
-            assert!(now <= usize::try_from(decoder.fragment_count()).unwrap());
+            assert!(now <= decoder.fragment_count());
             prev = now;
         }
         assert_eq!(
             decoder.resolved_fragment_count(),
-            Some(usize::try_from(decoder.fragment_count()).unwrap())
+            Some(decoder.fragment_count())
         );
     }
 }

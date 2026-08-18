@@ -3,7 +3,7 @@
 use dcbor::CBOR;
 
 use super::{Ur, map_cbor};
-use crate::{CborErrorKind, DecoderLimits, Error, Result};
+use crate::{CborErrorKind, DecoderLimits, Error, Result, UrType};
 
 /// Fountain encoder that owns the CBOR payload bytes (no lifetime on [`Ur`]).
 #[derive(Debug)]
@@ -53,6 +53,12 @@ impl MultipartEncoder {
     pub const fn fragment_count(&self) -> u32 {
         self.encoder.fragment_count()
     }
+
+    /// Whether this encoder emits a single-part UR (`K == 1`).
+    #[must_use]
+    pub const fn is_single_part(&self) -> bool {
+        self.encoder.is_single_part()
+    }
 }
 
 /// Fountain decoder that rebuilds a [`Ur`] from recovered dCBOR bytes.
@@ -92,6 +98,37 @@ impl MultipartDecoder {
         self.decoder.complete()
     }
 
+    /// Source fragment count `K` (0 before any part).
+    #[must_use]
+    pub const fn fragment_count(&self) -> u32 {
+        self.decoder.fragment_count()
+    }
+
+    /// Resolved source fragment count, or `None` before any part.
+    #[must_use]
+    pub fn resolved_fragment_count(&self) -> Option<u32> {
+        self.decoder.resolved_fragment_count()
+    }
+
+    /// Whether this session is fail-closed (`ResourceLimit` or `DecoderState`).
+    #[must_use]
+    pub const fn is_poisoned(&self) -> bool {
+        self.decoder.is_poisoned()
+    }
+
+    /// Type pinned by the first successfully received part.
+    #[must_use]
+    pub const fn ur_type(&self) -> Option<&UrType> {
+        self.decoder.ur_type()
+    }
+
+    /// Requires every received part to match `ur_type`.
+    #[must_use]
+    pub fn with_expected_type(mut self, ur_type: UrType) -> Self {
+        self.decoder = self.decoder.with_expected_type(ur_type);
+        self
+    }
+
     /// Reconstructed [`Ur`] when complete; `Ok(None)` while still receiving.
     ///
     /// # Errors
@@ -117,10 +154,36 @@ impl Default for MultipartDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Error;
+    use crate::{Error, UrType};
 
     fn large_ur() -> Ur {
         Ur::new("alpha", (0_u8..80).collect::<Vec<_>>()).unwrap()
+    }
+
+    #[test]
+    fn encoder_is_single_part_when_payload_fits() {
+        let ur = Ur::new("test", vec![1, 2, 3]).unwrap();
+        let encoder = MultipartEncoder::new(&ur, 64).unwrap();
+        assert!(encoder.is_single_part());
+        assert_eq!(encoder.fragment_count(), 1);
+    }
+
+    #[test]
+    fn decoder_progress_and_expected_type() {
+        let ur = large_ur();
+        let mut encoder = MultipartEncoder::new(&ur, 10).unwrap();
+        let mut decoder = MultipartDecoder::new().with_expected_type(UrType::new("alpha").unwrap());
+        assert!(!encoder.is_single_part());
+        assert_eq!(decoder.fragment_count(), 0);
+        assert_eq!(decoder.resolved_fragment_count(), None);
+        assert!(!decoder.is_poisoned());
+        assert!(decoder.ur_type().is_none());
+
+        decoder.receive(&encoder.next_part().unwrap()).unwrap();
+        assert_eq!(decoder.fragment_count(), encoder.fragment_count());
+        assert_eq!(decoder.resolved_fragment_count(), Some(1));
+        assert_eq!(decoder.ur_type().map(UrType::as_str), Some("alpha"));
+        assert!(!decoder.is_poisoned());
     }
 
     #[test]
@@ -141,6 +204,19 @@ mod tests {
         let recovered = decoder.message().unwrap().unwrap();
         assert_eq!(recovered.ur_type_str(), "alpha");
         assert_eq!(recovered.cbor(), ur.cbor());
+    }
+
+    #[test]
+    fn expected_type_rejects_mismatch() {
+        let ur = large_ur();
+        let mut encoder = MultipartEncoder::new(&ur, 10).unwrap();
+        let mut decoder = MultipartDecoder::new().with_expected_type(UrType::new("beta").unwrap());
+        assert!(matches!(
+            decoder.receive(&encoder.next_part().unwrap()).unwrap_err(),
+            Error::UnexpectedType { .. }
+        ));
+        assert!(decoder.ur_type().is_none());
+        assert!(!decoder.is_poisoned());
     }
 
     #[test]

@@ -7,23 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-18
+
+Production hardening of 0.2. Breaking 0.x API. Not a 1.0 freeze.
+`bcur` 0.3.0, `bcur-cli` 0.2.0. No compatibility aliases.
+
 ### Added
 
+- `ResourceKind`, `CborError`, `CborErrorKind`. `Error::ResourceLimit` takes
+  `ResourceKind`. `Error::Cbor` wraps `CborError` (`kind()` / `detail()`).
+- `Error::SinglePartExhausted` — fountain `Encoder` `K == 1` second `next_part`
+- Public sealed `bcur::ur::IntoUrType` (`UrType`, `&UrType`, `&str`, `String`)
 - `DecoderLimits::worst_case_heap_bytes`: saturating cap-product ceiling of
   the public caps, excluding allocator/BTree overhead. 64-bit `Default` is
   `225_824_768` (≈ 215 MiB). Default integers are unchanged and remain
   experimental until 1.0.
+- `ur::Encoder::complete`; `MultipartEncoder::{complete, is_single_part}`;
+  `MultipartDecoder::{fragment_count, resolved_fragment_count, is_poisoned,
+  ur_type, with_expected_type}`
+- `fuzz/` cargo-fuzz targets (`decode_ur`, `fountain_part`, `bytewords`,
+  `encode_roundtrip`) and seed corpora
+- `crates/bcur/tests/vectors/` goldens; weekly published-string drift job
+- `THIRD_PARTY.md` restored
 
 ### Changed
 
+- Deleted `TryFrom<&UrType> for UrType`
+- `fountain::Decoder::fragment_count` is `u32` (was `usize`);
+  `resolved_fragment_count` is `Option<u32>` (was `Option<usize>`).
+  The `unwrap_or(u32::MAX)` fallback is gone.
+- UR `Encoder` `K == 1` re-emits `ur:<type>/<body>` and does not call fountain.
+  `current_index` saturates at 1.
 - Lockfile: `bitcoin_hashes` 1.2.0, `minicbor` 2.3.0, `thiserror` 2.0.20,
   and latest compatible transitives (`cc` 1.4.3, `wasm-bindgen` 0.2.127,
   `zerocopy` 0.8.56, `futures-*` 0.3.34). `Cargo.toml` ranges were already
   at current majors; no incompatible upgrades exist.
 
+### Migration
+
+```text
+Error::ResourceLimit("uri_len")           → Error::ResourceLimit(ResourceKind::UriLen)
+Error::Cbor(s)                            → Error::Cbor(c) ; c.kind() / c.detail()
+TryFrom<&UrType> for UrType               → deleted; pass UrType / &UrType / &str / String into Ur::new
+                                            (sealed bcur::ur::IntoUrType; do not impl)
+ur::Decoder::fragment_count unwrap_or MAX → gone; type is still u32
+fountain::Decoder::fragment_count         → u32 (was usize)
+resolved_fragment_count                   → Option<u32> (was Option<usize>)
+fountain Encoder K==1 second next_part    → Error::SinglePartExhausted
+ur::Encoder::current_index when K == 1    → saturates at 1; fountain sequence is not advanced
+                                            (interop vs URKit is the emitted UR string, not seqNum)
+CLI encode                                → --type is required
+bcur-cli Cargo.toml bcur version          → "0.3"
+```
+
+### CLI (`bcur-cli` 0.2.0)
+
+- `--type` is required on encode (no default `bytes`)
+- Path-dep SemVer pin `bcur = { path = "../bcur", version = "0.3" }`
+
 ### Notes
 
-- Docs: restore `THIRD_PARTY.md` and the L0–L3 vs L4 dCBOR contract in crate rustdoc. No behavior change.
+- L0–L3 vs L4 dCBOR contract is in crate rustdoc
+- `DecoderLimits::default` numbers remain experimental until 1.0
+- 1.0 waits for crates.io 0.3 plus 14 days of clean `fuzz-nightly`
 
 ## [0.2.0] — 2026-08-18
 
@@ -96,6 +142,7 @@ resource limits, and interop goldens. No typed dCBOR API promise in this series.
 
 Workspace scaffold and experimental development.
 
+[0.3.0]: https://github.com/qntx/bcur/releases/tag/v0.3.0
 [0.2.0]: https://github.com/qntx/bcur/releases/tag/v0.2.0
 [0.1.0]: https://github.com/qntx/bcur/releases/tag/v0.1.0
 [0.0.1]: https://github.com/qntx/bcur/releases/tag/v0.0.1

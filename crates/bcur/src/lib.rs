@@ -2,7 +2,7 @@
 //!
 //! # Status
 //!
-//! **0.2** ships the transport stack (bytewords, fountain codes, multi-part UR,
+//! **0.3** ships the transport stack (bytewords, fountain codes, multi-part UR,
 //! [`DecoderLimits`]) and an optional typed dCBOR layer.
 //!
 //! # Features

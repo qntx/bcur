@@ -196,13 +196,14 @@ impl Encoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ResourceLimit`] ([`ResourceKind::Sequence`]) if the
+    /// [`Error::SinglePartExhausted`] if `K == 1` and a part was already
+    /// emitted. [`Error::ResourceLimit`] ([`ResourceKind::Sequence`]) if the
     /// sequence would exceed `u32::MAX`.
     pub fn next_part(&mut self) -> Result<Part> {
-        if self.current_sequence == u32::MAX {
-            return Err(Error::ResourceLimit(ResourceKind::Sequence));
+        if self.sequence_count == 1 && self.current_sequence >= 1 {
+            return Err(Error::SinglePartExhausted);
         }
-        self.current_sequence += 1;
+        self.current_sequence = next_sequence(self.current_sequence)?;
         let indexes = choose_fragments(
             self.current_sequence as usize,
             self.parts.len(),
@@ -222,6 +223,14 @@ impl Encoder {
             data: mixed,
         })
     }
+}
+
+/// Next 1-based fountain `seqNum`. Does not wrap.
+pub(crate) const fn next_sequence(current: u32) -> Result<u32> {
+    if current == u32::MAX {
+        return Err(Error::ResourceLimit(ResourceKind::Sequence));
+    }
+    Ok(current + 1)
 }
 
 /// Fountain decoder with resource limits and fail-closed poison.
@@ -1048,6 +1057,27 @@ mod tests {
         assert!(matches!(
             Encoder::new(b"x", 0),
             Err(Error::InvalidFragmentLen)
+        ));
+    }
+
+    #[test]
+    fn test_k1_second_next_part_is_exhausted() {
+        let mut encoder = Encoder::new(b"hello", 64).unwrap();
+        assert_eq!(encoder.fragment_count(), 1);
+        assert!(encoder.next_part().is_ok());
+        assert!(matches!(
+            encoder.next_part(),
+            Err(Error::SinglePartExhausted)
+        ));
+    }
+
+    #[test]
+    fn test_next_sequence_max_is_resource_limit() {
+        // Wrap at u32::MAX is not exercised at runtime (too expensive).
+        // The increment predicate is next_sequence.
+        assert!(matches!(
+            next_sequence(u32::MAX),
+            Err(Error::ResourceLimit(ResourceKind::Sequence))
         ));
     }
 

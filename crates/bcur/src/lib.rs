@@ -76,7 +76,7 @@ mod crc32;
 mod error;
 mod rng;
 
-pub use error::{Error, Result};
+pub use error::{CborError, CborErrorKind, Error, ResourceKind, Result};
 pub use fountain::DecoderLimits;
 pub use ur::{
     Decoder, Encoder, Kind, ParsedUr, UrType, decode, decode_message, decode_with_type, encode,

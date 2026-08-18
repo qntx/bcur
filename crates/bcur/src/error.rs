@@ -2,6 +2,84 @@
 
 use alloc::string::String;
 
+/// Which decoder/encoder budget was exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ResourceKind {
+    /// Original payload length (`max_message_length` or `u32` wire field).
+    MessageLength,
+    /// Fragment count `K` (`max_fragment_count` or `u32` wire field).
+    FragmentCount,
+    /// Fountain `seqNum` would exceed `u32::MAX`.
+    Sequence,
+    /// Part payload length (`max_fragment_data_length`).
+    FragmentData,
+    /// Unique received index-set count (`max_received_parts`).
+    ReceivedParts,
+    /// Mixed-part XOR buffer size (`max_buffer_parts`).
+    BufferParts,
+    /// UR string length (`max_uri_len`).
+    UriLen,
+}
+
+/// dCBOR failure from the typed layer. Transport never produces this.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CborError {
+    kind: CborErrorKind,
+    detail: String,
+}
+
+impl CborError {
+    #[cfg_attr(
+        not(feature = "dcbor"),
+        allow(dead_code, reason = "typed layer is the only constructor caller")
+    )]
+    pub(crate) fn new(kind: CborErrorKind, detail: impl Into<String>) -> Self {
+        Self {
+            kind,
+            detail: detail.into(),
+        }
+    }
+
+    /// Failure class.
+    #[must_use]
+    pub const fn kind(&self) -> CborErrorKind {
+        self.kind
+    }
+
+    /// Underlying `dcbor` display text.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+/// Class of dCBOR failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CborErrorKind {
+    /// `CBOR::try_from_data` / well-formedness / determinism.
+    Decode,
+    /// Well-formed CBOR that cannot become the requested Rust type.
+    Type,
+}
+
+/// Fail-closed decoder poison. Not re-exported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Poison {
+    Limit(ResourceKind),
+    DecoderState,
+}
+
+impl Poison {
+    pub(crate) const fn to_error(self) -> Error {
+        match self {
+            Self::Limit(kind) => Error::ResourceLimit(kind),
+            Self::DecoderState => Error::DecoderState,
+        }
+    }
+}
+
 /// Errors that can occur while encoding or decoding Uniform Resources.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
@@ -52,9 +130,12 @@ pub enum Error {
     /// Internal decoder invariant was broken.
     #[error("fountain decoder internal state error")]
     DecoderState,
+    /// Fountain `next_part` called again when `K == 1`.
+    #[error("single-part fountain encoder already emitted its only part")]
+    SinglePartExhausted,
     /// A configured resource limit was exceeded.
-    #[error("decoder resource limit exceeded: {0}")]
-    ResourceLimit(&'static str),
+    #[error("decoder resource limit exceeded: {0:?}")]
+    ResourceLimit(ResourceKind),
 
     // --- UR ---
     /// The URI did not start with the `ur:` scheme.
@@ -83,8 +164,8 @@ pub enum Error {
 
     // --- typed / dCBOR ---
     /// An error from the optional dCBOR layer.
-    #[error("dCBOR error: {0}")]
-    Cbor(String),
+    #[error("dCBOR error ({kind:?}): {detail}", kind = .0.kind(), detail = .0.detail())]
+    Cbor(CborError),
 }
 
 /// Result alias for `bcur` operations.

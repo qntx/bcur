@@ -3,7 +3,7 @@
 use dcbor::CBOR;
 
 use super::{Ur, map_cbor};
-use crate::{DecoderLimits, Error, Result};
+use crate::{CborErrorKind, DecoderLimits, Error, Result};
 
 /// Fountain encoder that owns the CBOR payload bytes (no lifetime on [`Ur`]).
 #[derive(Debug)]
@@ -36,7 +36,8 @@ impl MultipartEncoder {
     ///
     /// # Errors
     ///
-    /// [`Error::ResourceLimit`] (`"sequence"`) after `u32::MAX` parts.
+    /// [`Error::ResourceLimit`] ([`crate::ResourceKind::Sequence`]) after
+    /// `u32::MAX` parts.
     pub fn next_part(&mut self) -> Result<String> {
         self.encoder.next_part()
     }
@@ -102,7 +103,7 @@ impl MultipartDecoder {
             return Ok(None);
         };
         let ur_type = self.decoder.ur_type().ok_or(Error::DecoderState)?;
-        let cbor = map_cbor(CBOR::try_from_data(data))?;
+        let cbor = map_cbor(CBOR::try_from_data(data), CborErrorKind::Decode)?;
         Ur::new(ur_type, cbor).map(Some)
     }
 }

@@ -6,7 +6,7 @@ use dcbor::CBOR;
 
 use super::map_cbor;
 use crate::ur::Kind;
-use crate::{Error, Result, UrType};
+use crate::{CborErrorKind, Error, Result, UrType};
 
 /// A Uniform Resource whose payload is deterministic CBOR.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +47,7 @@ impl Ur {
         }
         Ok(Self {
             ur_type,
-            cbor: map_cbor(CBOR::try_from_data(data))?,
+            cbor: map_cbor(CBOR::try_from_data(data), CborErrorKind::Decode)?,
         })
     }
 
@@ -184,7 +184,7 @@ mod tests {
         let uri = format!("ur:test/{body}");
         assert!(matches!(
             Ur::from_ur_string(uri).unwrap_err(),
-            Error::Cbor(_)
+            Error::Cbor(ref e) if e.kind() == CborErrorKind::Decode
         ));
     }
 

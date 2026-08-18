@@ -3,7 +3,7 @@
 use dcbor::{CBORTagged, CBORTaggedDecodable, CBORTaggedEncodable};
 
 use super::{Ur, map_cbor};
-use crate::{Error, Result, UrType};
+use crate::{CborErrorKind, Error, Result, UrType};
 
 /// First registered CBOR tag name, validated as a UR type.
 fn first_tag_ur_type<T: CBORTagged>() -> Result<UrType> {
@@ -70,7 +70,10 @@ impl<T: CBORTaggedEncodable> UrEncodable for T {
 impl<T: CBORTaggedDecodable> UrDecodable for T {
     fn from_ur(ur: &Ur) -> Result<Self> {
         ur.check_type(&first_tag_ur_type::<T>()?)?;
-        map_cbor(Self::from_untagged_cbor(ur.cbor().clone()))
+        map_cbor(
+            Self::from_untagged_cbor(ur.cbor().clone()),
+            CborErrorKind::Type,
+        )
     }
 }
 

@@ -26,9 +26,9 @@ use crate::{Error, ResourceKind, Result};
 
 /// Hard limits for adversarial multi-part streams.
 ///
-/// Default integers are **experimental until 1.0**. They stay at the 0.2
-/// values unless fuzz or a CVE forces a tighten before freeze. Hosts that
-/// need a fixed or embedded budget must use [`Decoder::with_limits`].
+/// [`Default`] is the production budget for hosts that do not call
+/// [`Decoder::with_limits`]. Embedded or tighter envelopes must still set
+/// limits explicitly.
 ///
 /// These caps are a desktop fail-closed ceiling, not a QR-version table.
 ///

@@ -1,6 +1,6 @@
 [package]
 name = "bcur-cli"
-version = "0.2.0"
+version = "1.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -17,7 +17,7 @@ name = "bcur"
 path = "src/main.rs"
 
 [dependencies]
-bcur = { path = "../bcur", version = "0.3" }
+bcur = { path = "../bcur", version = "1" }
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 hex = "0.4"

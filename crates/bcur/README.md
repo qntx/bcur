@@ -4,9 +4,9 @@ A Rust implementation of [Uniform Resources](https://github.com/BlockchainCommon
 
 URs encode binary payloads as URI-friendly strings for QR codes and unreliable channels, using [bytewords](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-012-bytewords.md) and fountain codes for multi-part transfer.
 
-## Status (0.3)
+## Status (1.0)
 
-Transport: bytewords + fountain + multi-part UR + `DecoderLimits`.  
+Transport: bytewords + fountain + multi-part UR + frozen `DecoderLimits` Default.  
 Typed dCBOR: `feature = "dcbor"` (`Ur`, traits, multipart wrappers; implies `std`).
 
 ## Layering

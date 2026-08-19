@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-08-19
+
+In-tree production freeze of the 0.3 transport + typed dCBOR API.
+`bcur` 1.0.0, `bcur-cli` 1.0.0. No compatibility aliases.
+
+### Changed
+
+- `DecoderLimits::default` six integers are the production Default
+  (`1_048_576`, `2_000`, `8_192`, `4_000`, `8_000`, `8_192`). Hosts that
+  need another budget still use `Decoder::with_limits`.
+- Workspace / CLI versions `1.0.0`; `bcur-cli` pins `bcur = "1"`.
+
 ## [0.3.0] — 2026-08-18
 
 Production hardening of 0.2. Breaking 0.x API. Not a 1.0 freeze.
@@ -20,8 +32,8 @@ Production hardening of 0.2. Breaking 0.x API. Not a 1.0 freeze.
 - Public sealed `bcur::ur::IntoUrType` (`UrType`, `&UrType`, `&str`, `String`)
 - `DecoderLimits::worst_case_heap_bytes`: saturating cap-product ceiling of
   the public caps, excluding allocator/BTree overhead. 64-bit `Default` is
-  `225_824_768` (≈ 215 MiB). Default integers are unchanged and remain
-  experimental until 1.0.
+  `225_824_768` (≈ 215 MiB). Default integers are unchanged (not frozen
+  in 0.3).
 - `ur::Encoder::complete`; `MultipartEncoder::{complete, is_single_part}`;
   `MultipartDecoder::{fragment_count, resolved_fragment_count, is_poisoned,
   ur_type, with_expected_type}`
@@ -68,8 +80,7 @@ bcur-cli Cargo.toml bcur version          → "0.3"
 ### Notes
 
 - L0–L3 vs L4 dCBOR contract is in crate rustdoc
-- `DecoderLimits::default` numbers remain experimental until 1.0
-- 1.0 waits for crates.io 0.3 plus 14 days of clean `fuzz-nightly`
+- Default limit integers were not frozen in this release
 
 ## [0.2.0] — 2026-08-18
 
@@ -99,7 +110,7 @@ Optional typed dCBOR layer (`feature = "dcbor"`, implies `std`).
 ### Notes
 
 - Transport (`no_std` + `alloc`) is unchanged
-- `DecoderLimits::default` numbers remain experimental until 1.0
+- Default limit integers were not frozen in this release
 - Removed empty reserved `bytemoji` feature (implement when the tables land)
 - MSRV 1.86; criterion 0.8
 - `ur::encode` returns `String` (type is already validated; `Result` was dead)
@@ -134,7 +145,7 @@ resource limits, and interop goldens. No typed dCBOR API promise in this series.
 
 ### Notes
 
-- `DecoderLimits::default` numeric values are **experimental** until 1.0
+- Default limit integers were not frozen in this release
 - Feature `dcbor` is a stub for the planned 0.2 typed layer
 - Feature `bytemoji` is reserved (not implemented in 0.1)
 
@@ -142,6 +153,7 @@ resource limits, and interop goldens. No typed dCBOR API promise in this series.
 
 Workspace scaffold and experimental development.
 
+[1.0.0]: https://github.com/qntx/bcur/releases/tag/v1.0.0
 [0.3.0]: https://github.com/qntx/bcur/releases/tag/v0.3.0
 [0.2.0]: https://github.com/qntx/bcur/releases/tag/v0.2.0
 [0.1.0]: https://github.com/qntx/bcur/releases/tag/v0.1.0

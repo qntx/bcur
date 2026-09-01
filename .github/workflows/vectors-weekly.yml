@@ -23,12 +23,12 @@ env:
 
 jobs:
   published-string-drift:
-    name: quoted ur: literal drift (not 005 compliance)
+    name: "quoted ur: literal drift (not 005 compliance)"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - name: Extract quoted ur: literals at pins
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Extract quoted "ur:" literals at pins
         run: scripts/extract_published_urs.sh | tee /tmp/published_now.txt
       - name: Exact-set diff against published_from_refs.txt
         run: >

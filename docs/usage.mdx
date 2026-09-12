@@ -1,0 +1,17 @@
+---
+title: Usage
+description: Multi-part UR with Encoder::bytes and Decoder.
+---
+
+```rust
+let data = b"Ten chars!".repeat(10);
+let mut encoder = bcur::Encoder::bytes(&data, 5).unwrap();
+let mut decoder = bcur::Decoder::default();
+while !decoder.complete() {
+    let part = encoder.next_part().unwrap();
+    decoder.receive(&part).unwrap();
+}
+assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
+```
+
+`ur::encode` / `Encoder` do not parse or require CBOR. `UrType::bytes` and `Encoder::bytes` move untyped payloads (matches ur-rs). BCR-2020-005’s “message MUST be dCBOR” is enforced on L4 when `feature = "dcbor"`: `typed::Ur::from_ur_string` and `typed::MultipartDecoder::message` reject non-dCBOR (`Error::Cbor`).

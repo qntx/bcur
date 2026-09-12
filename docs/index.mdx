@@ -1,0 +1,10 @@
+---
+title: bcur
+description: Uniform Resources in Rust.
+---
+
+`bcur` encodes binary data as URI-friendly Uniform Resource strings for QR codes and unreliable channels, using Bytewords and fountain codes.
+
+Crate: [bcur](https://crates.io/crates/bcur). Status **1.0** freezes the transport stack (bytewords, fountain codes, multi-part UR, `DecoderLimits` default integers) and the optional typed dCBOR layer.
+
+Wire-compatible with [@qntx/ur](https://github.com/qntx/ur.js). This crate does not ship a Blockchain Commons type registry, Envelope, or PSBT module. Application types implement `UrEncodable` / `UrDecodable` in a consumer crate (`feature = "dcbor"`).

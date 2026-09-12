@@ -1,0 +1,5 @@
+{
+  "title": "bcur",
+  "description": "Uniform Resources for Rust.",
+  "pages": ["index", "install", "usage", "features"]
+}

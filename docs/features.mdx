@@ -1,0 +1,9 @@
+---
+title: Features
+description: Cargo features for std and typed dCBOR.
+---
+
+- **`std`** (default): host builds.
+- **`dcbor`**: typed `typed::Ur` and `UrEncodable` / `UrDecodable` (implies `std`).
+
+Core transport always needs `alloc` and supports `no_std` via `--no-default-features`.

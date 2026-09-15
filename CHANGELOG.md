@@ -18,6 +18,9 @@ In-tree production freeze of the 0.3 transport + typed dCBOR API.
   (`1_048_576`, `2_000`, `8_192`, `4_000`, `8_000`, `8_192`). Hosts that
   need another budget still use `Decoder::with_limits`.
 - Workspace / CLI versions `1.0.0`; `bcur-cli` pins `bcur = "1"`.
+- Crate README and rustdoc heroes are L3 `Encoder::new` + L4 `Ur::new`.
+  `Encoder::bytes` remains in the API. docs.rs builds with `--all-features`.
+- Fountain `seqNum` does not wrap; `u32::MAX` is `ResourceLimit(Sequence)`.
 
 ## [0.3.0] — 2026-08-18
 

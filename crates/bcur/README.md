@@ -28,20 +28,23 @@ Typed dCBOR: `feature = "dcbor"` (`Ur`, traits, multipart wrappers; implies `std
 
 ## Quick start
 
+L3 transport — opaque bytes plus a type token. `Encoder::bytes` / `UrType::bytes`
+remain for tests and generic hosts; they are not the product default.
+
 ```rust
-use bcur::{Decoder, Encoder};
+use bcur::{Decoder, Encoder, UrType};
 
 let data = b"Ten chars!".repeat(10);
-let mut encoder = Encoder::bytes(&data, 5).unwrap();
+let mut encoder = Encoder::new(&data, 5, &UrType::new("alpha").unwrap()).unwrap();
 let mut decoder = Decoder::default();
 while !decoder.complete() {
-    let part = encoder.next_part().unwrap();
-    decoder.receive(&part).unwrap();
+    decoder.receive(&encoder.next_part().unwrap()).unwrap();
 }
 assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
 ```
 
-Typed (`feature = "dcbor"`):
+L4 typed dCBOR (`feature = "dcbor"`). First registered tag **name** is the UR
+type; the body is untagged.
 
 ```rust
 use bcur::Ur;

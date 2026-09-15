@@ -37,15 +37,17 @@
 //!
 //! # Example
 //!
+//! L3 transport (opaque bytes + type token). [`Encoder::bytes`] remains for
+//! ur-rs-shaped tests; it is not the crate hero.
+//!
 //! ```
+//! use bcur::{Decoder, Encoder, UrType};
+//!
 //! let data = b"Ten chars!".repeat(10);
-//! let mut encoder = bcur::Encoder::bytes(&data, 5).unwrap();
-//! let mut decoder = bcur::Decoder::default();
+//! let mut encoder = Encoder::new(&data, 5, &UrType::new("alpha").unwrap()).unwrap();
+//! let mut decoder = Decoder::default();
 //! while !decoder.complete() {
-//!     let part = encoder.next_part().unwrap();
-//!     if encoder.current_index() & 1 > 0 {
-//!         decoder.receive(&part).unwrap();
-//!     }
+//!     decoder.receive(&encoder.next_part().unwrap()).unwrap();
 //! }
 //! assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
 //! ```

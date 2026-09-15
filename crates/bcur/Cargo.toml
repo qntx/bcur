@@ -11,6 +11,9 @@ categories = ["encoding", "cryptography", "no-std"]
 readme = "README.md"
 documentation = "https://docs.rs/bcur"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["std"]
 ## Enables `std` (host builds). Transport works with or without this feature.

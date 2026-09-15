@@ -1,17 +1,29 @@
 ---
 title: Usage
-description: Multi-part UR with Encoder::bytes and Decoder.
+description: L3 transport Encoder and L4 typed Ur.
 ---
 
+L3 — opaque bytes plus a type token:
+
 ```rust
+use bcur::{Decoder, Encoder, UrType};
+
 let data = b"Ten chars!".repeat(10);
-let mut encoder = bcur::Encoder::bytes(&data, 5).unwrap();
-let mut decoder = bcur::Decoder::default();
+let mut encoder = Encoder::new(&data, 5, &UrType::new("alpha")?)?;
+let mut decoder = Decoder::default();
 while !decoder.complete() {
-    let part = encoder.next_part().unwrap();
-    decoder.receive(&part).unwrap();
+    decoder.receive(&encoder.next_part()?)?;
 }
-assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
+assert_eq!(decoder.message()?.as_deref(), Some(data.as_slice()));
 ```
 
-`ur::encode` / `Encoder` do not parse or require CBOR. `UrType::bytes` and `Encoder::bytes` move untyped payloads (matches ur-rs). BCR-2020-005’s “message MUST be dCBOR” is enforced on L4 when `feature = "dcbor"`: `typed::Ur::from_ur_string` and `typed::MultipartDecoder::message` reject non-dCBOR (`Error::Cbor`).
+`ur::encode` / `Encoder` do not parse or require CBOR. `UrType::bytes` and `Encoder::bytes` remain for untyped test payloads (matches ur-rs). They are not the crate hero.
+
+L4 (`feature = "dcbor"`) enforces BCR-2020-005 “message MUST be dCBOR”: `typed::Ur::from_ur_string` and `typed::MultipartDecoder::message` reject non-dCBOR (`Error::Cbor`). First tag name is the UR type; the body is untagged.
+
+```rust
+use bcur::Ur;
+
+let ur = Ur::new("test", vec![1, 2, 3])?;
+assert_eq!(ur.string(), "ur:test/lsadaoaxjygonesw");
+```

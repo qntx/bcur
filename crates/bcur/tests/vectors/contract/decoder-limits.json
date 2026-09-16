@@ -1,0 +1,8 @@
+{
+  "maxMessageLength": 1048576,
+  "maxFragmentCount": 2000,
+  "maxFragmentDataLength": 8192,
+  "maxBufferParts": 4000,
+  "maxReceivedParts": 8000,
+  "maxUriLen": 8192
+}

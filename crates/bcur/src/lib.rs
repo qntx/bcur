@@ -90,5 +90,7 @@ pub mod typed;
 // Dev-only tools are linked into test/bench targets; keep the lib lint clean.
 #[cfg(test)]
 use criterion as _;
+#[cfg(test)]
+use serde_json as _;
 #[cfg(feature = "dcbor")]
 pub use typed::{MultipartDecoder, MultipartEncoder, Ur, UrCodable, UrDecodable, UrEncodable};

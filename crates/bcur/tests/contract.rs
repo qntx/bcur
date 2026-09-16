@@ -47,32 +47,6 @@ fn assert_line_file(raw: &str) {
     );
 }
 
-fn resource_kind(rust: &str) -> ResourceKind {
-    [
-        ("UriLen", ResourceKind::UriLen),
-        ("FragmentCount", ResourceKind::FragmentCount),
-        ("FragmentData", ResourceKind::FragmentData),
-        ("MessageLength", ResourceKind::MessageLength),
-        ("ReceivedParts", ResourceKind::ReceivedParts),
-        ("BufferParts", ResourceKind::BufferParts),
-        ("Sequence", ResourceKind::Sequence),
-    ]
-    .into_iter()
-    .find(|(name, _)| *name == rust)
-    .map(|(_, kind)| kind)
-    .expect("unknown ResourceKind ident")
-}
-
-fn rust_ident_for_limit<'a>(spec: &'a Value, limit: &str) -> &'a str {
-    spec.get("limits")
-        .and_then(Value::as_array)
-        .unwrap()
-        .iter()
-        .find(|row| row.get("limit").and_then(Value::as_str) == Some(limit))
-        .and_then(|row| row.get("rust").and_then(Value::as_str))
-        .unwrap()
-}
-
 fn assert_session_poison(kind: ResourceKind, decoder: &mut Decoder, part: &str) {
     assert!(
         matches!(
@@ -166,27 +140,25 @@ fn k1_contract() {
     assert!(encoder.is_single_part());
     let outbound = encoder.next_part().unwrap();
     assert!(!outbound.contains(json_str(&spec, "outboundMustNotContain")));
-    if spec
-        .get("outboundEqualsSinglePartEncode")
-        .and_then(Value::as_bool)
-        .unwrap()
-    {
-        assert_eq!(outbound, encode(payload, &ur_type));
-    }
-    if spec
-        .get("inboundFountain11Accepted")
-        .and_then(Value::as_bool)
-        .unwrap()
-    {
-        let mut fountain = fountain::Encoder::new(payload, 64).unwrap();
-        let part = fountain.next_part().unwrap();
-        let body = bytewords::encode(&part.to_cbor(), Style::Minimal);
-        let uri = format!("ur:{}/1-1/{body}", ur_type.as_str());
-        let mut decoder = Decoder::default();
-        decoder.receive(&uri).unwrap();
-        assert!(decoder.complete());
-        assert_eq!(decoder.message().unwrap().as_deref(), Some(payload));
-    }
+    assert_eq!(
+        spec.get("outboundEqualsSinglePartEncode")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(outbound, encode(payload, &ur_type));
+    assert_eq!(
+        spec.get("inboundFountain11Accepted")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    let mut fountain = fountain::Encoder::new(payload, 64).unwrap();
+    let part = fountain.next_part().unwrap();
+    let body = bytewords::encode(&part.to_cbor(), Style::Minimal);
+    let uri = format!("ur:{}/1-1/{body}", ur_type.as_str());
+    let mut decoder = Decoder::default();
+    decoder.receive(&uri).unwrap();
+    assert!(decoder.complete());
+    assert_eq!(decoder.message().unwrap().as_deref(), Some(payload));
 }
 
 #[test]
@@ -238,14 +210,21 @@ fn poison_maps_via_rust_ident() {
     let raw = include_str!("vectors/contract/poison.json");
     assert!(!raw.contains("DecoderState"));
     let rows = spec.get("limits").and_then(Value::as_array).unwrap();
-    assert_eq!(rows.len(), 7);
-    for row in rows {
-        let rust = json_str(row, "rust");
-        let kind = resource_kind(rust);
-        assert_eq!(format!("{kind:?}"), rust);
+    let kinds = [
+        ResourceKind::UriLen,
+        ResourceKind::FragmentCount,
+        ResourceKind::FragmentData,
+        ResourceKind::MessageLength,
+        ResourceKind::ReceivedParts,
+        ResourceKind::BufferParts,
+        ResourceKind::Sequence,
+    ];
+    assert_eq!(rows.len(), kinds.len());
+    for (row, kind) in rows.iter().zip(kinds) {
+        assert_eq!(json_str(row, "rust"), format!("{kind:?}"));
         let session = row.get("sessionPoison").and_then(Value::as_bool).unwrap();
         // Sequence is encoder-only; `next_sequence` is crate-private (fountain unit tests).
-        if rust == "Sequence" {
+        if kind == ResourceKind::Sequence {
             assert!(!session);
         } else {
             assert!(session);
@@ -265,7 +244,6 @@ fn poison_receive_and_message_same_code() {
         .collect();
     assert_eq!(names, ["uri_len", "fragment_count"]);
 
-    let uri_len = resource_kind(rust_ident_for_limit(&spec, "uri_len"));
     let uri_payload = b"Ten chars!".repeat(8);
     let mut uri_enc = Encoder::bytes(&uri_payload, 5).unwrap();
     let uri_part = uri_enc.next_part().unwrap();
@@ -273,9 +251,8 @@ fn poison_receive_and_message_same_code() {
         max_uri_len: 16,
         ..DecoderLimits::default()
     });
-    assert_session_poison(uri_len, &mut uri_decoder, &uri_part);
+    assert_session_poison(ResourceKind::UriLen, &mut uri_decoder, &uri_part);
 
-    let fragment_count = resource_kind(rust_ident_for_limit(&spec, "fragment_count"));
     let fragment_payload = b"Ten chars!".repeat(16);
     let mut fragment_enc = Encoder::bytes(&fragment_payload, 4).unwrap();
     assert!(fragment_enc.fragment_count() > 1);
@@ -284,7 +261,11 @@ fn poison_receive_and_message_same_code() {
         ..DecoderLimits::default()
     });
     let fragment_part = fragment_enc.next_part().unwrap();
-    assert_session_poison(fragment_count, &mut fragment_decoder, &fragment_part);
+    assert_session_poison(
+        ResourceKind::FragmentCount,
+        &mut fragment_decoder,
+        &fragment_part,
+    );
 }
 
 #[test]

@@ -123,7 +123,7 @@ fn multipart_roundtrip_lossy_channel() {
     assert_eq!(decoder.message().unwrap().as_deref(), Some(data.as_slice()));
 }
 
-/// `published_from_refs.txt` is the weekly exact-set allowlist (full extract).
+/// `published_from_refs.txt` is the pinned extract of quoted `ur:` literals.
 /// It must contain the 20-URI table and every in-tree published single that
 /// the pinned files actually quote.
 #[test]

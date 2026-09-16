@@ -10,6 +10,7 @@ Golden test vectors were taken from or checked against
 - crypto-request CBOR fixture
 - `choose_fragments` tables (`crates/bcur/tests/vectors/ur_rs_choose_fragments.txt`)
 - RNG sequences (kept as small `u64` arrays in unit tests)
+- sister-interop copies in `crates/bcur/tests/vectors/contract/` (`fountain-mixed.txt`, `published-singles.txt`)
 
 bcur reimplements the algorithms; it does not vendor ur-rs source modules.
 When a test table is substantially identical to an ur-rs test, this notice

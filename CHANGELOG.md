@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Canonical `crates/bcur/tests/vectors/contract/` goldens for ur.js+bcur sister interop.
+
 ## [1.0.0] — 2026-08-19
 
 In-tree production freeze of the 0.3 transport + typed dCBOR API.

@@ -1,0 +1,1 @@
+Canonical goldens for ur.js and bcur sister interop. ur.js copies these files; divergence is an implementation bug. ur-rs MIT goldens also live here (`fountain-mixed.txt`, `published-singles.txt`) and are covered by repository-root `THIRD_PARTY.md`. Line files are data-only (UTF-8, LF, no `#` headers).

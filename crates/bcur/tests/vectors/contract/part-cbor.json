@@ -1,0 +1,9 @@
+{
+  "sequence": 1,
+  "sequenceCount": 9,
+  "messageLength": 256,
+  "checksum": 23570951,
+  "dataHex": "916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c",
+  "cborHex": "8501091901001a0167aa07581d916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c",
+  "nonShortestSequenceCborHex": "851801091901001a0167aa07581d916ec65cf77cadf55cd7f9cda1a1030026ddd42e905b77adc36e4f2d3c"
+}

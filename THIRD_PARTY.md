@@ -35,8 +35,8 @@ They are used as interop goldens.
 
 `crates/bcur/tests/vectors/published_from_refs.txt` is the sorted unique set
 of quoted `ur:…` string literals extracted from pinned URKit / bc-ur **test
-files** (not source). Weekly `.github/workflows/vectors-weekly.yml` diffs
-that set. It is drift detection, not BCR-2020-005 compliance.
+files** (not source). It is a snapshot of those pins, not BCR-2020-005
+compliance. Regenerate with `scripts/extract_published_urs.sh`.
 
 ## Not copied
 

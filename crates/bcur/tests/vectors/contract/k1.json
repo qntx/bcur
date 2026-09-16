@@ -1,0 +1,7 @@
+{
+  "payloadUtf8": "hello",
+  "type": "bytes",
+  "outboundMustNotContain": "/1-1/",
+  "outboundEqualsSinglePartEncode": true,
+  "inboundFountain11Accepted": true
+}

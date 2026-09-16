@@ -117,6 +117,7 @@ dependencies = [
  "hex",
  "minicbor",
  "rand_xoshiro",
+ "serde_json",
  "thiserror",
 ]
 

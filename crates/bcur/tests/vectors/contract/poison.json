@@ -1,0 +1,13 @@
+{
+  "limits": [
+    { "limit": "uri_len", "rust": "UriLen", "sessionPoison": true },
+    { "limit": "fragment_count", "rust": "FragmentCount", "sessionPoison": true },
+    { "limit": "fragment_data", "rust": "FragmentData", "sessionPoison": true },
+    { "limit": "message_length", "rust": "MessageLength", "sessionPoison": true },
+    { "limit": "received_parts", "rust": "ReceivedParts", "sessionPoison": true },
+    { "limit": "buffer_parts", "rust": "BufferParts", "sessionPoison": true },
+    { "limit": "sequence", "rust": "Sequence", "sessionPoison": false }
+  ],
+  "receiveAndMessageSameCode": ["uri_len", "fragment_count"],
+  "notPoison": ["UnexpectedType", "CborDecode"]
+}
